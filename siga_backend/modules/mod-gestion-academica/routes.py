@@ -668,6 +668,29 @@ async def eliminar_estudiante(estudiante_id: int, request: Request, db: AsyncSes
     if not db_estudiante:
         raise HTTPException(status_code=404, detail="Estudiante no encontrado")
 
+    # Borrar registros dependientes: todas las FK hacia "estudiantes" son NOT NULL
+    # y sin esto el DELETE falla con un 500 por violación de restricción.
+    await db.execute(
+        text("DELETE FROM convalidaciones_detalle WHERE resolucion_id IN "
+             "(SELECT id FROM resoluciones_convalidacion WHERE estudiante_id = :eid)"),
+        {"eid": estudiante_id},
+    )
+    await db.execute(
+        text("DELETE FROM matricula_detalles WHERE matricula_id IN "
+             "(SELECT id FROM matriculas WHERE estudiante_id = :eid)"),
+        {"eid": estudiante_id},
+    )
+    for tabla in (
+        "matriculas",
+        "historial_academico",
+        "beneficios_estudiante",
+        "registros_practicas",
+        "resoluciones_convalidacion",
+        "solicitudes_tramites",
+        "tesoreria_pagos",
+    ):
+        await db.execute(text(f"DELETE FROM {tabla} WHERE estudiante_id = :eid"), {"eid": estudiante_id})
+
     await db.delete(db_estudiante)
 
     event_payload = {
