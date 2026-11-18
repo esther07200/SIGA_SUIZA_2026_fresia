@@ -617,17 +617,6 @@ export function StudentMaster() {
   };
 
   useEffect(() => {
-    if (userRole !== 'invitado') {
-      if (userRole === 'secretaria_programa' && currentPrograma === 'ALL') {
-        const fallbackId = user?.email === 'secretaria_prog@siga.edu' ? '2' : '1';
-        setCurrentPrograma(user?.programa_id ? String(user.programa_id) : fallbackId);
-      } else {
-        handleSearch(searchTerm);
-      }
-    }
-  }, [currentPrograma, userRole]);
-
-  useEffect(() => {
     if (!showModal) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -706,6 +695,17 @@ export function StudentMaster() {
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    if (userRole !== 'invitado') {
+      if (userRole === 'secretaria_programa' && currentPrograma === 'ALL') {
+        const fallbackId = user?.email === 'secretaria_prog@siga.edu' ? '2' : '1';
+        setCurrentPrograma(user?.programa_id ? String(user.programa_id) : fallbackId);
+      } else {
+        handleSearch(searchTerm);
+      }
+    }
+  }, [currentPrograma, userRole]);
 
   const handleFotoChange = (e) => {
     const file = e.target.files?.[0];

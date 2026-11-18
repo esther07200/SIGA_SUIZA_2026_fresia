@@ -15,6 +15,21 @@ import './enrollmentPremium.css';
  * (dry_run, sin escribir en BD) y ejecuta la matrícula automática de Ciclo I
  * al procesar, mostrando el resumen y la ficha de cada ingresante.
  */
+const Badge = ({ children, tone = 'slate' }) => {
+  const tones = {
+    green: 'bg-green-100 text-green-700 border-green-200',
+    red: 'bg-red-100 text-red-700 border-red-200',
+    amber: 'bg-amber-100 text-amber-700 border-amber-200',
+    sky: 'bg-sky-100 text-sky-700 border-sky-200',
+    slate: 'bg-slate-100 text-slate-600 border-slate-200',
+  };
+  return (
+    <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold border ${tones[tone]}`}>
+      {children}
+    </span>
+  );
+};
+
 export function AdmissionPanel() {
   const [programs, setPrograms] = useState([]);
   const [periods, setPeriods] = useState([]);
@@ -114,21 +129,6 @@ export function AdmissionPanel() {
     } finally {
       setFichaLoading(null);
     }
-  };
-
-  const Badge = ({ children, tone = 'slate' }) => {
-    const tones = {
-      green: 'bg-green-100 text-green-700 border-green-200',
-      red: 'bg-red-100 text-red-700 border-red-200',
-      amber: 'bg-amber-100 text-amber-700 border-amber-200',
-      sky: 'bg-sky-100 text-sky-700 border-sky-200',
-      slate: 'bg-slate-100 text-slate-600 border-slate-200',
-    };
-    return (
-      <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold border ${tones[tone]}`}>
-        {children}
-      </span>
-    );
   };
 
   return (

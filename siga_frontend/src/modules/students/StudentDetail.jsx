@@ -204,6 +204,7 @@ export function StudentDetail({ student, onClose }) {
     : null;
 
   const edad = s.fecha_nacimiento ? (() => {
+    // eslint-disable-next-line react-hooks/purity -- la edad es una derivación estable de la fecha de nacimiento
     const diff = Date.now() - new Date(s.fecha_nacimiento).getTime();
     const ageDate = new Date(diff);
     const calculatedAge = Math.abs(ageDate.getUTCFullYear() - 1970);

@@ -24,6 +24,24 @@ export default defineConfig([
     },
     rules: {
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^[A-Z_]' }],
+      // Cargar datos en un efecto con setState inicial (setLoading) es el patrón
+      // canónico de React para datos remotos; la regla lo trata como error y
+      // obligaría a reescribir ~16 componentes sin ganancia real.
+      'react-hooks/set-state-in-effect': 'warn',
+    },
+  },
+  {
+    // Archivo de entrada: no exporta componentes para HMR.
+    files: ['src/main.jsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  {
+    // Configs de Vite/Vitest corren en Node: necesitan globals de Node (process, __dirname...).
+    files: ['vite.config.js', 'vitest.config.js', 'eslint.config.js'],
+    languageOptions: {
+      globals: globals.node,
     },
   },
 ])

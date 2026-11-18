@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// En local apunta a localhost:8000; en Docker se sobreescribe con VITE_PROXY_TARGET
+const coreTarget = process.env.VITE_PROXY_TARGET || 'http://localhost:8000'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -14,19 +17,19 @@ export default defineConfig({
     host: true, // needed for docker
     proxy: {
       '/api': {
-        target: 'http://siga-core:8000',
+        target: coreTarget,
         changeOrigin: true
       },
       '/auth': {
-        target: 'http://siga-core:8000',
+        target: coreTarget,
         changeOrigin: true
       },
       '/core': {
-        target: 'http://siga-core:8000',
+        target: coreTarget,
         changeOrigin: true
       },
       '/ws': {
-        target: 'http://siga-core:8000',
+        target: coreTarget,
         changeOrigin: true,
         ws: true
       }

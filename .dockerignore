@@ -1,0 +1,49 @@
+# ---- VCS / IDE ----
+.git
+.gitignore
+.github
+.vscode
+.idea
+
+# ---- Python: NUNCA enviar el venv ni basura al contexto de build ----
+**/venv
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+.coverage
+
+# ---- Secretos: los módulos se configuran por variables de entorno en Railway ----
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+
+# ---- Node ----
+**/node_modules
+siga_frontend/dist
+siga_frontend/coverage
+**/.vite
+
+# ---- Datos / artefactos pesados que no hacen falta en la imagen ----
+*.sql
+*.dump
+*.xlsx
+*.xls
+*.csv
+*.log
+*.pdf
+siga_backend/logs
+siga_backend/uploads
+siga_frontend/public/*.pdf
+
+# ---- Documentación y backups ----
+*.md
+!README.md
+**/*.bak
+**/*~

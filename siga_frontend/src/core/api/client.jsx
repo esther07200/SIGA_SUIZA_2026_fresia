@@ -46,7 +46,9 @@ class SIGAApiClient {
           try {
             const errorData = await response.json();
             errorMsg = errorData.detail || errorMsg;
-          } catch (_) {}
+          } catch {
+            // cuerpo JSON inválido: se conserva el mensaje por defecto
+          }
           throw new Error(errorMsg);
         }
         this.clearToken();

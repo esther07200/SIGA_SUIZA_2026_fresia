@@ -3,6 +3,22 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://sigasuiza2026fresia-production.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/auth/:path*",
+      "destination": "https://sigasuiza2026fresia-production.up.railway.app/auth/:path*"
+    },
+    {
+      "source": "/core/:path*",
+      "destination": "https://sigasuiza2026fresia-production.up.railway.app/core/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://sigasuiza2026fresia-production.up.railway.app/health"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

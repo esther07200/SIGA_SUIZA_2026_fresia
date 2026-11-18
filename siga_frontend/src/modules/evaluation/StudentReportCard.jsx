@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Fragment } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import { API_BASE } from '../../core/api/client';
 import { useAuth } from '../../core/auth/useAuth';
 import { BoletinImpresion } from './BoletinImpresion';
@@ -62,6 +62,20 @@ const AccentStripe = () => (
     <span className="flex-1 bg-amber-400"></span>
     <span className="flex-1 bg-fuchsia-500"></span>
     <span className="flex-1 bg-cyan-400"></span>
+  </div>
+);
+
+const Membrete = () => (
+  <div className="text-center mb-7">
+    <div className="flex items-center justify-center gap-2.5 mb-1">
+      <span className="text-2xl">🎓</span>
+      <h1 className="text-2xl md:text-3xl font-extrabold text-primary tracking-wide">SIGA</h1>
+    </div>
+    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.28em] mb-3">Sistema de Gestión Académica</p>
+    <div className="w-full h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent mb-3"></div>
+    <h2 className="text-sm font-bold text-slate-700 uppercase tracking-[0.2em]">Boletín de Notas Oficial</h2>
+    <div className="w-16 h-0.5 bg-primary mx-auto mt-2.5"></div>
+    <p className="text-[10px] text-slate-400 mt-2">Conforme al Reglamento de Evaluación y Promoción del Estudiante</p>
   </div>
 );
 
@@ -325,7 +339,25 @@ export function StudentReportCard() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [allStudents, setAllStudents] = useState([]);
-  const [filteredStudents, setFilteredStudents] = useState([]);
+  const filteredStudents = useMemo(() => {
+    const term = searchTerm.trim();
+    if (term.length < 3) return [];
+    const val = term.toLowerCase();
+    return allStudents.filter(s => {
+      const nombres = (s.nombres || '').toLowerCase();
+      const apellidos = (s.apellidos || '').toLowerCase();
+      const nombreCompleto = `${s.nombres || ''} ${s.apellidos || ''}`.trim().toLowerCase();
+      const nombreInverso = `${s.apellidos || ''} ${s.nombres || ''}`.trim().toLowerCase();
+      return (
+        (s.dni && s.dni.includes(term)) ||
+        (nombres && nombres.includes(val)) ||
+        (apellidos && apellidos.includes(val)) ||
+        (nombreCompleto && nombreCompleto.includes(val)) ||
+        (nombreInverso && nombreInverso.includes(val)) ||
+        (s.codigo_estudiante && s.codigo_estudiante.toLowerCase().includes(val))
+      );
+    });
+  }, [searchTerm, allStudents]);
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [selectedStudentName, setSelectedStudentName] = useState('');
@@ -362,31 +394,10 @@ export function StudentReportCard() {
     fetchStudents();
   }, [isAdmin]);
 
-  useEffect(() => {
-    if (searchTerm.length >= 3) {
-      const val = searchTerm.trim().toLowerCase();
-      const term = searchTerm.trim();
-      const filtered = allStudents.filter(s => {
-        const nombres = (s.nombres || '').toLowerCase();
-        const apellidos = (s.apellidos || '').toLowerCase();
-        const nombreCompleto = `${s.nombres || ''} ${s.apellidos || ''}`.trim().toLowerCase();
-        const nombreInverso = `${s.apellidos || ''} ${s.nombres || ''}`.trim().toLowerCase();
-        return (
-          (s.dni && s.dni.includes(term)) ||
-          (nombres && nombres.includes(val)) ||
-          (apellidos && apellidos.includes(val)) ||
-          (nombreCompleto && nombreCompleto.includes(val)) ||
-          (nombreInverso && nombreInverso.includes(val)) ||
-          (s.codigo_estudiante && s.codigo_estudiante.toLowerCase().includes(val))
-        );
-      });
-      setFilteredStudents(filtered);
-      setShowDropdown(true);
-    } else {
-      setFilteredStudents([]);
-      setShowDropdown(false);
-    }
-  }, [searchTerm, allStudents]);
+  const handleSearchTermChange = (value) => {
+    setSearchTerm(value);
+    setShowDropdown(value.trim().length >= 3);
+  };
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -398,6 +409,12 @@ export function StudentReportCard() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const resetFiltrosCursos = () => {
+    setBusquedaCursos('');
+    setFiltroEstado('todos');
+    setOrdenCursos('nombre');
+  };
+
   const handleSelectStudent = (student) => {
     setSelectedStudentId(student.id);
     setSelectedStudent(student);
@@ -406,6 +423,7 @@ export function StudentReportCard() {
     setShowDropdown(false);
     setData(null);
     setError(null);
+    resetFiltrosCursos();
 
     const entry = { id: student.id, nombres: student.nombres, apellidos: student.apellidos, codigo_estudiante: student.codigo_estudiante };
     setRecentStudents(prev => {
@@ -421,8 +439,10 @@ export function StudentReportCard() {
     setSelectedStudent(null);
     setSelectedStudentName('');
     setSearchTerm('');
+    setShowDropdown(false);
     setData(null);
     setError(null);
+    resetFiltrosCursos();
   };
 
   const handleRemoveRecent = (event, studentId) => {
@@ -437,84 +457,44 @@ export function StudentReportCard() {
   const effectiveStudentId = isAdmin ? selectedStudentId : user?.id;
 
   useEffect(() => {
-    if (!effectiveStudentId) {
-      setLoading(false);
-      return;
-    }
+    if (!effectiveStudentId) return;
     const fetchBoletin = async () => {
       setLoading(true);
       setError(null);
       try {
-        let real = null;
-        try {
-          const res = await fetch(
-            `${API_BASE}/api/mod-gestion-academica/estudiantes/${effectiveStudentId}/boletin`,
-            { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } }
-          );
-          if (res.ok) {
-            real = await res.json();
+        const res = await fetch(
+          `${API_BASE}/api/mod-gestion-academica/estudiantes/${effectiveStudentId}/boletin`,
+          { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } }
+        );
+
+        if (!res.ok) {
+          let detail = null;
+          try {
+            const errBody = await res.json();
+            detail = errBody?.detail;
+          } catch {
+            detail = null;
           }
-        } catch (err) {
-          console.warn('API /boletin no disponible o error:', err);
+          throw new Error(typeof detail === 'string' && detail
+            ? detail
+            : 'No se encontró información del boletín para este estudiante.');
         }
 
-        const notasJson = obtenerNotasPorCiclo(effectiveStudentId, selectedStudent);
-        if (notasJson) {
-          const periodoActual = resumenDesdeJson(notasJson);
-          if (real) {
-            setData({
-              ...real,
-              estudiante: { ...real.estudiante, periodo_codigo: notasJson.periodoActual },
-              cursos_periodo: periodoActual.cursos_periodo,
-              resumen: { ...real.resumen, ...periodoActual.resumen },
-              _notasJson: notasJson,
-            });
-          } else {
-            const boletinJson = generarBoletinDesdeJson(effectiveStudentId, selectedStudent);
-            if (boletinJson) {
-              setData(boletinJson);
-            } else {
-              throw new Error('No se pudo generar la información del boletín.');
-            }
-          }
-        } else if (real) {
-          const evaluacion = mockEvaluacion.evaluaciones.find(
-            e => e.codigo_estudiante === real.estudiante.codigo_estudiante
-              && e.periodo === real.estudiante.periodo_codigo
-          );
-          setData(evaluacion ? { ...real, ...evaluacion } : real);
-        } else {
-          throw new Error('No se encontró información del boletín para este estudiante.');
+        const boletin = await res.json();
+        if (!boletin || typeof boletin !== 'object') {
+          throw new Error('Respuesta inválida del boletín académico.');
         }
+        setData(boletin);
+        resetFiltrosCursos();
       } catch (e) {
-        setError(e.message);
+        setError(e.message || 'No se pudo cargar el boletín.');
       }
       setLoading(false);
     };
     fetchBoletin();
   }, [effectiveStudentId, selectedStudent]);
 
-  useEffect(() => {
-    setBusquedaCursos('');
-    setFiltroEstado('todos');
-    setOrdenCursos('nombre');
-  }, [data]);
-
-  const Membrete = () => (
-    <div className="text-center mb-7">
-      <div className="flex items-center justify-center gap-2.5 mb-1">
-        <span className="text-2xl">🎓</span>
-        <h1 className="text-2xl md:text-3xl font-extrabold text-primary tracking-wide">SIGA</h1>
-      </div>
-      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.28em] mb-3">Sistema de Gestión Académica</p>
-      <div className="w-full h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent mb-3"></div>
-      <h2 className="text-sm font-bold text-slate-700 uppercase tracking-[0.2em]">Boletín de Notas Oficial</h2>
-      <div className="w-16 h-0.5 bg-primary mx-auto mt-2.5"></div>
-      <p className="text-[10px] text-slate-400 mt-2">Conforme al Reglamento de Evaluación y Promoción del Estudiante</p>
-    </div>
-  );
-
-  if (loading) {
+  if (loading && effectiveStudentId) {
     return (
       <div className="animate-fade-in max-w-4xl mx-auto">
         <Membrete />
@@ -600,7 +580,7 @@ export function StudentReportCard() {
           <div className="mb-6" ref={searchRef}>
             <StudentSearchBar
               searchTerm={searchTerm}
-              setSearchTerm={setSearchTerm}
+              setSearchTerm={handleSearchTermChange}
               filteredStudents={filteredStudents}
               showDropdown={showDropdown}
               setShowDropdown={setShowDropdown}
@@ -627,7 +607,7 @@ export function StudentReportCard() {
         <div ref={searchRef} className="mb-6">
           <StudentSearchBar
             searchTerm={searchTerm}
-            setSearchTerm={setSearchTerm}
+            setSearchTerm={handleSearchTermChange}
             filteredStudents={filteredStudents}
             showDropdown={showDropdown}
             onSelect={handleSelectStudent}
@@ -650,7 +630,7 @@ export function StudentReportCard() {
           <div className="mb-6" ref={searchRef}>
             <StudentSearchBar
               searchTerm={searchTerm}
-              setSearchTerm={setSearchTerm}
+              setSearchTerm={handleSearchTermChange}
               filteredStudents={filteredStudents}
               showDropdown={showDropdown}
               setShowDropdown={setShowDropdown}
@@ -795,7 +775,7 @@ export function StudentReportCard() {
         <div ref={searchRef} className="no-print mb-6">
           <StudentSearchBar
             searchTerm={searchTerm}
-            setSearchTerm={setSearchTerm}
+            setSearchTerm={handleSearchTermChange}
             filteredStudents={filteredStudents}
             showDropdown={showDropdown}
             onSelect={handleSelectStudent}
