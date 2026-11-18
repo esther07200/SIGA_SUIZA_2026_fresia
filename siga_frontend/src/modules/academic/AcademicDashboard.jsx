@@ -301,7 +301,7 @@ export function AcademicDashboard() {
     try {
       await apiClient.request(`/api/mod-programas-estudio/programas/${editingProgram.id}`, {
         method: 'PUT',
-        data: {
+        body: JSON.stringify({
           nombre: editingProgram.nombre,
           codigo: editingProgram.codigo,
           descripcion: editingProgram.descripcion || '',
@@ -309,7 +309,7 @@ export function AcademicDashboard() {
           duracion_periodos: parseInt(editingProgram.duracion_periodos) || 6,
           modalidad: editingProgram.modalidad || 'presencial',
           estado: editingProgram.estado || 'activo'
-        }
+        })
       });
       setEditingProgram(null);
       await fetchData();
@@ -380,12 +380,12 @@ export function AcademicDashboard() {
     try {
       await apiClient.request(`/api/mod-programas-estudio/programas/${configProgram.id}/configuracion`, {
         method: 'POST',
-        data: {
+        body: JSON.stringify({
           periodo_academico: parseInt(paramConfig.periodo_academico) || 1,
           turnos: paramConfig.turnos,
           max_estudiantes: parseInt(paramConfig.max_estudiantes) || 35,
           coordinador_id: null
-        }
+        })
       });
       toast.success('¡Parametrización guardada exitosamente!');
       setConfigProgram(null);

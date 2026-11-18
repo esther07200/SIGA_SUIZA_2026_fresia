@@ -14,7 +14,7 @@ export default defineConfig({
     teardownTimeout: 10000,
     pool: 'forks',
     minWorkers: 1,
-    maxWorkers: 2,
+    maxWorkers: 1,
     fileParallelism: false,
   },
 })
