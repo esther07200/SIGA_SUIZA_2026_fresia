@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../../core/api/client';
 import { useToast } from '../../core/ui/ToastContext';
-import { X, Lightbulb, Calendar, Plus, Clock, ArrowRight } from 'lucide-react';
+import { X, Lightbulb, Calendar, Plus, Clock, ArrowRight, Trash2 } from 'lucide-react';
 
 export function PeriodManager({ onClose, onUpdate }) {
   const toast = useToast();
@@ -98,10 +98,24 @@ export function PeriodManager({ onClose, onUpdate }) {
       if (onUpdate) onUpdate();
       toast.success(`Estado del periodo actualizado a "${nuevoEstado}"`);
     } catch (error) {
-      console.error('Error actualizando estado:', error);
+      console.error('Error actualizando estado del periodo:', error);
       toast.error(error.message || 'Error al actualizar el estado del periodo');
     }
   };
+
+  const handleDelete = async (period) => {
+    if (!window.confirm(`¿Seguro que deseas eliminar el periodo ${period.codigo}? Esta acción no se puede deshacer.`)) return;
+    try {
+      await apiClient.callModule('mod-programas-estudio', `periodos/${period.id}`, 'DELETE');
+      fetchPeriods();
+      if (onUpdate) onUpdate();
+      toast.success(`Periodo ${period.codigo} eliminado`);
+    } catch (error) {
+      console.error('Error eliminando periodo:', error);
+      toast.error(error.message || 'No se pudo eliminar el periodo');
+    }
+  };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm animate-fade-in">
@@ -284,6 +298,15 @@ export function PeriodManager({ onClose, onUpdate }) {
                             <option value="en_curso">En Curso</option>
                             <option value="historico">Histórico</option>
                           </select>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(period)}
+                            title={`Eliminar periodo ${period.codigo}`}
+                            aria-label={`Eliminar periodo ${period.codigo}`}
+                            className="text-slate-400 hover:text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 rounded-lg p-1 cursor-pointer transition-colors"
+                          >
+                            <Trash2 size={13} />
+                          </button>
                         </div>
                       </div>
                     </div>

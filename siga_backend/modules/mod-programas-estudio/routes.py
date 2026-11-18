@@ -110,7 +110,17 @@ async def crear_periodo(periodo: PeriodoCreate, request: Request, db: AsyncSessi
     for key in ['fecha_inicio', 'fecha_fin', 'fecha_fin_matricula_regular', 'fecha_fin_matricula_extemporanea']:
         if data.get(key) and getattr(data[key], 'tzinfo', None):
             data[key] = data[key].replace(tzinfo=None)
-            
+
+    codigo_norm = (data.get('codigo') or '').strip().upper()
+    existente = (await db.execute(
+        select(PeriodoAcademico).where(func.upper(func.trim(PeriodoAcademico.codigo)) == codigo_norm)
+    )).scalars().first()
+    if existente:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ya existe un periodo académico con el código '{periodo.codigo}'."
+        )
+
     db_periodo = PeriodoAcademico(**data)
     db.add(db_periodo)
     await db.flush()
@@ -134,6 +144,52 @@ async def crear_periodo(periodo: PeriodoCreate, request: Request, db: AsyncSessi
 async def obtener_periodos(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(PeriodoAcademico).order_by(PeriodoAcademico.fecha_inicio.desc()))
     return result.scalars().all()
+
+@router.delete("/periodos/{periodo_id}")
+async def eliminar_periodo(periodo_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(PeriodoAcademico).where(PeriodoAcademico.id == periodo_id))
+    db_periodo = result.scalar_one_or_none()
+    if not db_periodo:
+        raise HTTPException(status_code=404, detail="Periodo no encontrado")
+
+    # Tablas que referencian el periodo (4 con FK NOT NULL + 2 sin FK)
+    en_uso = []
+    for tabla in (
+        "carga_lectiva",
+        "planes_trabajo_docente",
+        "tutorias",
+        "horarios_periodo",
+        "matriculas",
+        "evaluacion_registros",
+    ):
+        res = await db.execute(text(f"SELECT COUNT(*) FROM {tabla} WHERE periodo_id = :pid"), {"pid": periodo_id})
+        total = res.scalar() or 0
+        if total:
+            en_uso.append(f"{tabla} ({total})")
+    if en_uso:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No se puede eliminar el periodo '{db_periodo.codigo}' porque tiene registros asociados: "
+                + ", ".join(en_uso)
+                + "."
+            ),
+        )
+
+    codigo = db_periodo.codigo
+    await db.delete(db_periodo)
+
+    event = OutboxEvent(
+        event_type="periodo.eliminado",
+        payload={
+            "id": periodo_id,
+            "codigo": codigo,
+            "metadata": {"request_id": request.headers.get("X-Request-ID", "unknown")},
+        },
+    )
+    db.add(event)
+    await db.commit()
+    return {"message": "Periodo académico eliminado exitosamente", "id": periodo_id, "codigo": codigo}
 
 @router.put("/periodos/{periodo_id}/estado", response_model=PeriodoResponse)
 async def actualizar_estado_periodo(periodo_id: int, estado: str, request: Request, db: AsyncSession = Depends(get_db)):
