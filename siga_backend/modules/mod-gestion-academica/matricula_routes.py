@@ -13,6 +13,7 @@ ni cambia el comportamiento por defecto (motor flexible). Implementa, en orden:
 8. Historial y avance  -> historial académico y créditos del estudiante.
 """
 import json
+import unicodedata
 import uuid
 from datetime import datetime
 from io import BytesIO
@@ -38,7 +39,7 @@ from domain import (
 )
 from enrollment_engine import construir_propuesta, evaluar_ventana_matricula
 from enrollment_service import cargar_historial, construir_contexto
-from intermodule import fetch_cargaLectiva, fetch_malla, fetch_programa, fetch_periodo
+from intermodule import fetch_cargaLectiva, fetch_malla, fetch_programa, fetch_periodo, fetch_programas
 from models import (
     BeneficioEstudiante,
     ConvalidacionDetalle,
@@ -117,6 +118,10 @@ _MAP_COLUMNAS = {
     "apellido_materno": ["apellido materno", "materno", "segundo apellido"],
     "apellidos": ["apellidos"],
     "programa_id": ["programa_id", "id_programa", "programa id"],
+    "programa_nombre": [
+        "programa de estudios", "programa", "carrera", "programa de estudios:",
+        "nombre del programa", "programa académico",
+    ],
     "celular": ["celular", "telefono", "teléfono", "celular:"],
     "email_personal": ["email_personal", "correo", "correo:", "email"],
     "modalidad": ["modalidad", "modalidad_admision", "modalidad de admisión"],
@@ -124,7 +129,17 @@ _MAP_COLUMNAS = {
 
 
 def _normaliza_header(header: str) -> str:
-    return str(header).strip().lower().replace("  ", " ")
+    return " ".join(str(header).split()).lower()
+
+
+def _normaliza_nombre(texto: str) -> str:
+    """Normaliza un nombre de programa para comparar sin acentos ni dobles espacios."""
+    limpio = " ".join(str(texto).split()).strip().lower()
+    sin_acentos = "".join(
+        c for c in unicodedata.normalize("NFD", limpio)
+        if unicodedata.category(c) != "Mn"
+    )
+    return sin_acentos
 
 
 def _resolver_columnas(df_columns):
@@ -147,15 +162,23 @@ def _limpiar(valor):
     texto = str(valor).strip()
     if texto.lower() in ("", "nan", "none"):
         return None
-    return texto.replace(".0", "") if texto.endswith(".0") else texto
+    return texto[:-2] if texto.endswith(".0") else texto
 
 
 def parse_excel_ingresantes(contenido: bytes) -> List[dict]:
     excel = pd.ExcelFile(BytesIO(contenido))
-    hoja = excel.sheet_names[0]
-    df = pd.read_excel(excel, sheet_name=hoja)
-    cols = _resolver_columnas(df.columns)
-    if "dni" not in cols:
+    # Seleccionar la primera hoja que contenga una columna de DNI utilizable
+    # (la primera hoja suele ser un resumen sin los datos de ingresantes).
+    df, cols = None, None
+    for hoja in excel.sheet_names:
+        intento = pd.read_excel(excel, sheet_name=hoja)
+        if intento.empty:
+            continue
+        resuelto = _resolver_columnas(intento.columns)
+        if "dni" in resuelto:
+            df, cols = intento, resuelto
+            break
+    if df is None or cols is None:
         raise ValueError(
             "El Excel debe incluir una columna de DNI (p. ej. 'DNI' o 'NRO DE DOCUMENTO')."
         )
@@ -175,6 +198,7 @@ def parse_excel_ingresantes(contenido: bytes) -> List[dict]:
             "nombres": _limpiar(fila.get(cols.get("nombres"))) if cols.get("nombres") else "SIN NOMBRES",
             "apellidos": apellidos or "SIN APELLIDOS",
             "programa_id": _limpiar(fila.get(cols.get("programa_id"))) if cols.get("programa_id") else None,
+            "programa_nombre": _limpiar(fila.get(cols.get("programa_nombre"))) if cols.get("programa_nombre") else None,
             "celular": _limpiar(fila.get(cols.get("celular"))) if cols.get("celular") else None,
             "email_personal": _limpiar(fila.get(cols.get("email_personal"))) if cols.get("email_personal") else None,
             "modalidad": (_limpiar(fila.get(cols.get("modalidad"))) if cols.get("modalidad") else None) or "ORDINARIO",
@@ -256,18 +280,34 @@ async def admision_excel(
     if not registros:
         raise HTTPException(status_code=400, detail="No se encontraron ingresantes con DNI en el archivo.")
 
+    # Resolver nombres de programa del Excel ("PROGRAMA DE ESTUDIOS") a IDs.
+    if any(not r.get("programa_id") and r.get("programa_nombre") for r in registros):
+        catalogo = await fetch_programas()
+        if catalogo:
+            por_nombre = {_normaliza_nombre(p.get("nombre") or ""): p.get("id") for p in catalogo}
+            for r in registros:
+                if not r.get("programa_id") and r.get("programa_nombre"):
+                    pid = por_nombre.get(_normaliza_nombre(r["programa_nombre"]))
+                    if pid is not None:
+                        r["programa_id"] = str(pid)
+
+    # Consulta única de DNIs existentes (evita N+1 consultas por fila).
+    dnis = [r["dni"] for r in registros]
+    existentes_rows = await db.execute(
+        select(Estudiante.dni, Estudiante.id).where(Estudiante.dni.in_(dnis))
+    )
+    existentes_map = {dni: eid for dni, eid in existentes_rows.all()}
+
     periodo_info = await fetch_periodo(periodo_id)
     codigo_periodo = periodo_info.get("codigo") if periodo_info else f"ID {periodo_id}"
     es_inicio = es_periodo_inicio_anio(codigo_periodo)
 
     if dry_run:
-        preview = []
-        for reg in registros:
-            ya = (await db.execute(
-                select(Estudiante).where(Estudiante.dni == reg["dni"])
-            )).scalar_one_or_none()
-            preview.append({**reg, "existe": ya is not None, "estudiante_id": ya.id if ya else None})
-        
+        preview = [
+            {**reg, "existe": reg["dni"] in existentes_map, "estudiante_id": existentes_map.get(reg["dni"])}
+            for reg in registros
+        ]
+
         advertencia = None
         if not es_inicio:
             advertencia = (
@@ -291,8 +331,7 @@ async def admision_excel(
     creados, existentes = 0, 0
     ids_creados = []
     for reg in registros:
-        ya = await db.execute(select(Estudiante).where(Estudiante.dni == reg["dni"]))
-        if ya.scalar_one_or_none():
+        if reg["dni"] in existentes_map:
             existentes += 1
             continue
         prog = reg["programa_id"] or programa_id
@@ -316,6 +355,7 @@ async def admision_excel(
         db.add(estudiante)
         await db.flush()
         ids_creados.append(estudiante.id)
+        existentes_map[reg["dni"]] = estudiante.id  # evita duplicar DNIs repetidos en el archivo
         creados += 1
 
     await db.commit()
@@ -384,6 +424,7 @@ async def matricular_ingresantes(
     estudiantes = (await db.execute(query)).scalars().all()
 
     creadas, omitidas, sin_malla = [], [], []
+    ctx_cache: Dict = {}
     for est in estudiantes:
         if not est.programa_id:
             omitidas.append({"estudiante_id": est.id, "motivo": "Sin programa asignado"})
@@ -395,6 +436,7 @@ async def matricular_ingresantes(
         ctx = await construir_contexto(
             db, est.id, est.programa_id, payload.periodo_id,
             estrategia="strict", casuistica=Casuistica.INGRESANTE.value,
+            cache=ctx_cache,
         )
         if not ctx.unidades:
             sin_malla.append(est.id)

@@ -56,7 +56,6 @@ export function AdmissionPanel() {
         const per = Array.isArray(pe) ? pe : [];
         setPrograms(prog);
         setPeriods(per);
-        if (prog.length > 0) setProgramaId(String(prog[0].id));
         const activo = getDefaultPeriod(per);
         if (activo) setPeriodoId(String(activo.id));
       } catch (e) {
@@ -107,12 +106,27 @@ export function AdmissionPanel() {
         }
       );
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || `Error ${res.status}`);
+      if (!res.ok) {
+        if (res.status === 504 || res.status === 502 || res.status === 503) {
+          throw new Error(
+            'El servidor tardó demasiado en responder. Es posible que la carga ya se haya guardado: ' +
+            'revisa la lista de estudiantes y, si falta algo, vuelve a procesar el archivo.'
+          );
+        }
+        throw new Error(data.detail || `Error ${res.status}`);
+      }
       if (dryRun) setPreview(data);
       else setResultado(data);
     } catch (e) {
       console.error(e);
-      setError(e.message);
+      if (e.name === 'TypeError' && /fetch/i.test(e.message)) {
+        setError(
+          'No se pudo conectar con el servidor. Verifica tu conexión y vuelve a intentarlo; ' +
+          'si la carga ya se registró, actualiza la página para verla.'
+        );
+      } else {
+        setError(e.message);
+      }
     } finally {
       setLoading(false);
     }

@@ -147,7 +147,7 @@ def parse_excel_sync(contents: bytes):
     if b_datos_idx is None:
         raise ValueError(f"El Excel debe contener una hoja 'B_Datos'. Hojas encontradas: {excel_data.sheet_names}")
         
-    df_reg = pd.read_excel(excel_data, sheet_name='B_Datos')
+    df_reg = pd.read_excel(excel_data, sheet_name=b_datos_idx)
     if df_reg.shape[1] > 38:
         df_reg = df_reg.iloc[:, :38]
     

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { PRICE_TYPES } from './tupaCatalog';
 import { useToast } from '../../core/ui/ToastContext';
+import { useConfirm } from '../../core/ui/ConfirmModal';
 import { ConceptFormModal } from './ConceptFormModal';
 import { isPublicUrl, publicApiBase } from './lib/tesoreriaApi';
 import { downloadBlob } from './lib/xlsxWriter';
@@ -40,6 +41,7 @@ export function PriceSummary({ concept }) {
 
 export function TupaCatalogManager({ catalog, catalogError, onSaveConcept, onDeleteConcept, onResetCatalog, cajaConfig, onSaveCajaConfig }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState(null); // null | 'new' | concept
   const [query, setQuery] = useState('');
   const [imageError, setImageError] = useState('');
@@ -88,7 +90,7 @@ export function TupaCatalogManager({ catalog, catalogError, onSaveConcept, onDel
   }, [catalog, query]);
 
   const handleDelete = async (concept) => {
-    const ok = await toast.confirm({
+    const ok = await confirm({
       title: 'Eliminar Concepto TUPA',
       message: `¿Eliminar el concepto "${concept.codigo} · ${concept.nombre}" del tarifario? Los recibos ya emitidos con este concepto se conservan.`,
       type: 'danger',
@@ -106,7 +108,7 @@ export function TupaCatalogManager({ catalog, catalogError, onSaveConcept, onDel
   };
 
   const handleReset = async () => {
-    const ok = await toast.confirm({
+    const ok = await confirm({
       title: 'Restaurar Tarifario Oficial',
       message: '¿Restaurar el tarifario TUPA oficial? Se perderán los conceptos y precios personalizados.',
       type: 'warning',

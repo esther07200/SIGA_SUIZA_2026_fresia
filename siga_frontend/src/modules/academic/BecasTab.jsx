@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { apiClient } from '../../core/api/client';
 import { useToast } from '../../core/ui/ToastContext';
+import { useConfirm } from '../../core/ui/ConfirmModal';
 import { Plus, GraduationCap } from 'lucide-react';
 
 const TIPOS = ['Beca 18 (PRONABEC)', 'Excelencia Académica', 'Convenio Institucional', 'Convenio FF.AA.', 'Otro'];
@@ -16,6 +17,7 @@ const FORM_VACIO = {
 
 export function BecasTab() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [beneficios, setBeneficios] = useState([]);
   const [estudiantes, setEstudiantes] = useState([]);
   const [periodos, setPeriodos] = useState([]);
@@ -85,7 +87,7 @@ export function BecasTab() {
   };
 
   const desactivar = async (id) => {
-    const ok = await toast.confirm({
+    const ok = await confirm({
       title: 'Desactivar Beneficio',
       message: '¿Desactivar este beneficio? El descuento dejará de aplicarse.',
       type: 'warning',

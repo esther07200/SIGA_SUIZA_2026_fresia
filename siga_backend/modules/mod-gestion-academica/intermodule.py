@@ -48,6 +48,12 @@ async def fetch_malla(programa_id: int):
     return await _get("programas", f"/programas/{programa_id}/malla")
 
 
+async def fetch_programas():
+    """Catálogo de programas de estudio (lista con ``id`` y ``nombre``)."""
+    data = await _get("programas", "/programas")
+    return data if isinstance(data, list) else []
+
+
 async def fetch_programa(programa_id: int):
     """Datos del programa (incluye ``plan_estudio_id`` vigente)."""
     return await _get("programas", f"/programas/{programa_id}")

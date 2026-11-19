@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { PAYMENT_METHODS, CAREERS_MAP, getAvailableConcepts } from './tupaCatalog';
 import { useToast } from '../../core/ui/ToastContext';
+import { useConfirm } from '../../core/ui/ConfirmModal';
 import { ConceptFormModal } from './ConceptFormModal';
 import { ModalPortal } from './ModalPortal';
 import { QrCodeView } from './QrCodeView';
@@ -37,6 +38,7 @@ export function PaymentModal({
   onSuccess,
 }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const { available, hidden } = useMemo(
     () => getAvailableConcepts(catalog, student, studentPayments),
     [catalog, student, studentPayments]
@@ -87,7 +89,7 @@ export function PaymentModal({
   };
 
   const handleDeleteConcept = async (concept) => {
-    const ok = await toast.confirm({
+    const ok = await confirm({
       title: 'Eliminar Concepto TUPA',
       message: `¿Eliminar "${concept.codigo} · ${concept.nombre}" del tarifario TUPA? Los recibos ya emitidos se conservan.`,
       type: 'danger',

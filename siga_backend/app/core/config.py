@@ -24,8 +24,8 @@ class CoreSettings(BaseSettings):
     modules_validate_on_start: bool = True
     modules_discovery_sources: List[str] = ["local", "database", "kubernetes"]
     
-    # Communication
-    http_proxy_timeout: int = 30
+    # Communication (cargas masivas de admisión/matrícula pueden superar 30s)
+    http_proxy_timeout: int = 120
     
     # Security
     token_expire_minutes: int = 30

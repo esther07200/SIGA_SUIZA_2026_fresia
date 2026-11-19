@@ -221,12 +221,16 @@ export function EnrollmentDashboard() {
             }}
           >
             <option value="ALL">Todos los Programas</option>
-            <option value="1">Arquitectura de Plat.</option>
+            <option value="1">Desarrollo de Sistemas de Información</option>
             <option value="2">Enfermería Técnica</option>
-            <option value="3">Diseño Gráfico</option>
-            <option value="4">Administración</option>
+            <option value="4">Gestión / Asistencia Administrativa</option>
             <option value="5">Contabilidad</option>
-            <option value="6">Mecatrónica</option>
+            <option value="6">Mecatrónica Automotriz</option>
+            <option value="7">Electricidad Industrial</option>
+            <option value="8">Administración de Operaciones Turísticas</option>
+            <option value="9">Construcción Civil</option>
+            <option value="10">Producción Agropecuaria</option>
+            <option value="11">Manejo Forestal</option>
           </select>
         )}
         <span className="px-4 text-slate-400 text-xl">🔍</span>

@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../../core/api/client';
 import { useToast } from '../../core/ui/ToastContext';
+import { useConfirm } from '../../core/ui/ConfirmModal';
 import { Plus, Pencil, X, UserX, Users, ShieldCheck } from 'lucide-react';
 
 export function UserManagement() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -94,13 +96,17 @@ export function UserManagement() {
   };
 
   const handleDelete = async (id) => {
-    const ok = await toast.confirm({
-      title: 'Desactivar Usuario',
-      message: '¿Estás seguro de desactivar este usuario?',
-      type: 'warning',
-      confirmText: 'Sí, desactivar'
-    });
-    if (!ok) return;
+    try {
+      const ok = await confirm({
+        title: 'Desactivar Usuario',
+        message: '¿Estás seguro de desactivar este usuario?',
+        type: 'warning',
+        confirmText: 'Sí, desactivar'
+      });
+      if (!ok) return;
+    } catch {
+      return;
+    }
     try {
       await apiClient.request(`/api/mod-usuarios/usuarios/${id}`, { method: 'DELETE' });
       toast.success('Usuario desactivado exitosamente.');

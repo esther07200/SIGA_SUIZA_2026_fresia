@@ -121,22 +121,38 @@ async def construir_contexto(
     periodo_id: int,
     estrategia: str = None,
     casuistica: str = None,
+    cache: Dict = None,
 ) -> Contexto:
-    """Reúne toda la información y devuelve el contexto listo para el motor."""
+    """Reúne toda la información y devuelve el contexto listo para el motor.
+
+    ``cache`` (opcional) permite reutilizar las respuestas intermódulo
+    (malla, prerrequisitos, periodo y programa) entre varios estudiantes del
+    mismo programa/periodo, evitando cientos de llamadas HTTP en cargas masivas.
+    """
     estudiante = (
         await db.execute(select(Estudiante).where(Estudiante.id == estudiante_id))
     ).scalar_one_or_none()
 
     historial, intentos, convalidados = await cargar_historial(db, estudiante_id)
 
-    malla = await intermodule.fetch_malla(programa_id)
-    prereqs = await intermodule.fetch_prerequisitos(programa_id)
+    if cache is None:
+        cache = {}
+
+    async def _cached(key, fetcher):
+        if key in cache:
+            return cache[key]
+        valor = await fetcher()
+        cache[key] = valor
+        return valor
+
+    malla = await _cached(("malla", programa_id), lambda: intermodule.fetch_malla(programa_id))
+    prereqs = await _cached(("prereqs", programa_id), lambda: intermodule.fetch_prerequisitos(programa_id))
     unidades = _flatten_malla(malla, prereqs)
 
-    periodo = await intermodule.fetch_periodo(periodo_id)
+    periodo = await _cached(("periodo", periodo_id), lambda: intermodule.fetch_periodo(periodo_id))
 
     # Sección 2: ¿el alumno es "histórico"? (plan de origen ≠ plan vigente)
-    programa = await intermodule.fetch_programa(programa_id)
+    programa = await _cached(("programa", programa_id), lambda: intermodule.fetch_programa(programa_id))
     plan_origen = getattr(estudiante, "plan_estudios_id", None)
     plan_vigente = (programa or {}).get("plan_estudio_id") if isinstance(programa, dict) else None
     es_historico = bool(plan_origen and plan_vigente and plan_origen != plan_vigente)

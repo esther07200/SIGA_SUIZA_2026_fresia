@@ -2,10 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { apiClient } from '../../core/api/client';
 import { useToast } from '../../core/ui/ToastContext';
+import { useConfirm } from '../../core/ui/ConfirmModal';
 import { ArrowLeft, X, Plus, Trash2, BookOpen, Clock, Layers, Sparkles, CheckCircle2 } from 'lucide-react';
 
 export function CurriculumMesh({ programId, onBack }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const [malla, setMalla] = useState([]);
   const [program, setProgram] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -115,7 +117,7 @@ export function CurriculumMesh({ programId, onBack }) {
   };
 
   const handleDeleteModule = async (moduloId, moduloNombre) => {
-    const ok = await toast.confirm({
+    const ok = await confirm({
       title: '¿Eliminar módulo formativo?',
       message: `¿Estás seguro de eliminar el módulo "${moduloNombre}" y todas sus unidades asociadas?`,
       confirmText: 'Sí, eliminar',
@@ -173,7 +175,7 @@ export function CurriculumMesh({ programId, onBack }) {
   };
 
   const handleDeleteUnit = async (unidadId, unidadNombre) => {
-    const ok = await toast.confirm({
+    const ok = await confirm({
       title: '¿Eliminar unidad didáctica?',
       message: `¿Deseas eliminar la unidad didáctica "${unidadNombre}"?`,
       confirmText: 'Eliminar unidad',
