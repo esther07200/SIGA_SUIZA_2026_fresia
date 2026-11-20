@@ -209,35 +209,50 @@ async def importar_plan_minedu(
     valid_plan_fields = {"codigo", "nombre", "descripcion", "nivel_formativo", "creditos_totales", "horas_totales", "fecha_aprobacion", "resolucion_aprobacion", "estado"}
     
     if existing_plan:
-        # Si ya existe un plan con este código, sincronizamos sus metadatos de forma idempotente
         for k in valid_plan_fields:
             if k in data and data[k] is not None:
                 setattr(existing_plan, k, data[k])
-        await db.commit()
-        await db.refresh(existing_plan)
-        return {
-            "message": "Plan de estudio existente sincronizado correctamente",
-            "plan_id": existing_plan.id,
-            "codigo": existing_plan.codigo,
-            "modulos_importados": len(data.get("modulos", []))
-        }
-
-    # Crear el plan nuevo (solo campos válidos del modelo)
-    plan_data = {k: v for k, v in data.items() if k in valid_plan_fields}
-    db_plan = PlanEstudio(**plan_data)
-    db.add(db_plan)
-    await db.flush()
-    
-    # Crear módulos y unidades
-    for mod_data in data.get("modulos", []):
-        unidades_data = mod_data.pop("unidades", [])
-        db_modulo = ModuloPlan(**mod_data, plan_id=db_plan.id)
-        db.add(db_modulo)
+        db_plan = existing_plan
+    else:
+        # Crear el plan nuevo (solo campos válidos del modelo)
+        plan_data = {k: v for k, v in data.items() if k in valid_plan_fields}
+        db_plan = PlanEstudio(**plan_data)
+        db.add(db_plan)
         await db.flush()
-        
+
+    # Sincronizar módulos y unidades por código para que reintentar no los duplique
+    for mod_data in data.get("modulos", []):
+        unidades_data = mod_data.get("unidades", [])
+        result_modulo = await db.execute(
+            select(ModuloPlan).where(
+                ModuloPlan.plan_id == db_plan.id,
+                ModuloPlan.codigo == mod_data.get("codigo")
+            )
+        )
+        db_modulo = result_modulo.scalar_one_or_none()
+        modulo_fields = {k: v for k, v in mod_data.items() if k in {"codigo", "nombre", "horas", "creditos", "orden"}}
+        if db_modulo:
+            for key, value in modulo_fields.items():
+                setattr(db_modulo, key, value)
+        else:
+            db_modulo = ModuloPlan(**modulo_fields, plan_id=db_plan.id)
+            db.add(db_modulo)
+            await db.flush()
+
         for ud_data in unidades_data:
-            db_unidad = UnidadPlan(**ud_data, modulo_id=db_modulo.id)
-            db.add(db_unidad)
+            result_unidad = await db.execute(
+                select(UnidadPlan).where(
+                    UnidadPlan.modulo_id == db_modulo.id,
+                    UnidadPlan.codigo == ud_data.get("codigo")
+                )
+            )
+            db_unidad = result_unidad.scalar_one_or_none()
+            unidad_fields = {k: v for k, v in ud_data.items() if k in {"codigo", "nombre", "horas", "creditos", "tipo", "orden"}}
+            if db_unidad:
+                for key, value in unidad_fields.items():
+                    setattr(db_unidad, key, value)
+            else:
+                db.add(UnidadPlan(**unidad_fields, modulo_id=db_modulo.id))
             
     # Registrar en Outbox
     request_id = request.headers.get("X-Request-ID", "unknown")
@@ -255,7 +270,7 @@ async def importar_plan_minedu(
     await db.refresh(db_plan)
     
     return {
-        "message": "Plan importado exitosamente",
+        "message": "Plan de estudio sincronizado correctamente" if existing_plan else "Plan importado exitosamente",
         "plan_id": db_plan.id,
         "codigo": db_plan.codigo,
         "modulos_importados": len(data.get("modulos", []))

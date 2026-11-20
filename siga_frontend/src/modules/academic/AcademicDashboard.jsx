@@ -469,30 +469,23 @@ export function AcademicDashboard() {
       }
 
       // 1. Sincronizar o registrar el Plan de Estudios en mod-planes-estudio
-      let planId = null;
-      try {
-        const formData = new FormData();
-        formData.append('file', importFile);
-        formData.append('codigo', codigoCarrera);
-        formData.append('nombre', nombreCarrera);
+      const formData = new FormData();
+      formData.append('file', importFile);
+      formData.append('codigo', codigoCarrera);
+      formData.append('nombre', nombreCarrera);
 
-        const token = localStorage.getItem('token');
-        const planRes = await fetch(`${apiClient.baseURL}/api/mod-planes-estudio/planes/importar-minedu`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
-          body: formData
-        });
-        
-        if (planRes.ok) {
-          const planData = await planRes.json();
-          planId = planData.plan_id || null;
-        } else {
-          const planErr = await planRes.json().catch(() => ({}));
-          console.warn('Advertencia secundaria en mod-planes-estudio:', planErr.detail);
-        }
-      } catch (errPlanes) {
-        console.warn('Error no bloqueante en mod-planes-estudio:', errPlanes);
+      const token = localStorage.getItem('token');
+      const planRes = await fetch(`${apiClient.baseURL}/api/mod-planes-estudio/planes/importar-minedu`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+      const planData = await planRes.json().catch(() => ({}));
+      if (!planRes.ok) {
+        throw new Error(planData.detail || `No se pudo sincronizar el plan MINEDU (HTTP ${planRes.status}).`);
       }
+      const planId = planData.plan_id;
+      if (!planId) throw new Error('El módulo de planes no devolvió el identificador del plan importado.');
 
       // 2. Registrar el programa académico en mod-programas-estudio
       const programaData = {
@@ -504,12 +497,26 @@ export function AcademicDashboard() {
         plan_estudio_id: planId
       };
       
-      const createdProgram = await apiClient.callModule('mod-programas-estudio', 'programas', 'POST', programaData);
+      const programas = await apiClient.callModule('mod-programas-estudio', 'programas', 'GET');
+      const existingProgram = (Array.isArray(programas) ? programas : []).find(
+        programa => String(programa.codigo || '').trim().toUpperCase() === codigoCarrera.toUpperCase()
+      );
+      const createdProgram = existingProgram
+        ? await apiClient.callModule('mod-programas-estudio', `programas/${existingProgram.id}`, 'PUT', programaData)
+        : await apiClient.callModule('mod-programas-estudio', 'programas', 'POST', programaData);
+      const estructuraActual = existingProgram
+        ? await apiClient.callModule('mod-programas-estudio', `programas/${createdProgram.id}/estructura-completa`, 'GET')
+        : { modulos: [] };
 
       // 3. Registrar módulos y unidades didácticas en mod-programas-estudio
       if (createdProgram && createdProgram.id && Array.isArray(previewData.modulos)) {
         for (let i = 0; i < previewData.modulos.length; i++) {
           const modData = previewData.modulos[i];
+          const moduloExistente = (estructuraActual.modulos || []).find(modulo =>
+            Number(modulo.periodo) === Number(modData.orden || i + 1)
+            && normalizarTexto(modulo.nombre) === normalizarTexto(modData.nombre)
+          );
+          let createdModulo = moduloExistente;
           const moduloToCreate = {
             nombre: modData.nombre,
             periodo: modData.orden || i + 1,
@@ -518,11 +525,17 @@ export function AcademicDashboard() {
             orden: modData.orden || i + 1
           };
           
-          const createdModulo = await apiClient.callModule('mod-programas-estudio', `programas/${createdProgram.id}/modulos`, 'POST', moduloToCreate);
+          if (!createdModulo) {
+            createdModulo = await apiClient.callModule('mod-programas-estudio', `programas/${createdProgram.id}/modulos`, 'POST', moduloToCreate);
+          }
           
           if (createdModulo && createdModulo.id && Array.isArray(modData.unidades)) {
+            const unidadesExistentes = moduloExistente?.unidades || [];
             for (let j = 0; j < modData.unidades.length; j++) {
               const udData = modData.unidades[j];
+              if (unidadesExistentes.some(unidad => normalizarTexto(unidad.nombre) === normalizarTexto(udData.nombre))) {
+                continue;
+              }
               const unidadToCreate = {
                 nombre: udData.nombre,
                 horas_teoria: udData.horas || 0,
@@ -536,7 +549,7 @@ export function AcademicDashboard() {
         }
       }
 
-      toast.success(`La carrera "${nombreCarrera}" (${codigoCarrera}) y su estructura curricular fueron creadas exitosamente.`);
+      toast.success(`La carrera "${nombreCarrera}" (${codigoCarrera}) y su estructura curricular fueron sincronizadas exitosamente.`);
       setShowImportModal(false);
       setImportFile(null);
       setPreviewData(null);

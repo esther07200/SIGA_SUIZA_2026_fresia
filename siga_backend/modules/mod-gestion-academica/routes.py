@@ -10,6 +10,10 @@ from datetime import datetime
 from typing import List, Optional
 from pathlib import Path
 import uuid
+import unicodedata
+import re
+from shared.identity import get_identity, es_superadmin
+from intermodule import fetch_programas
 
 router = APIRouter()
 
@@ -115,12 +119,54 @@ async def ingesta_admitidos(request: Request, data: IngestaMasivaRequest, db: As
     Endpoint para ingestar de forma masiva (PUSH) los admitidos desde la App Externa de Admisión.
     Crea los expedientes de estudiantes y dispara eventos para integrarlos al ecosistema (crear usuarios, matricular, etc).
     """
-    estudiantes_creados = 0
-    
+    catalogo_programas = await fetch_programas()
+    if not catalogo_programas:
+        raise HTTPException(status_code=503, detail="No se pudo consultar el catálogo de programas de estudio.")
+
+    def normalizar_nombre(value: str) -> str:
+        normalized = unicodedata.normalize("NFD", value or "")
+        without_accents = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+        return re.sub(r"[^a-z0-9]+", " ", without_accents.lower()).strip()
+
+    programas_por_nombre = {
+        normalizar_nombre(programa.get("nombre", "")): programa["id"]
+        for programa in catalogo_programas
+        if programa.get("id") is not None
+    }
+    ids_validos = {programa["id"] for programa in catalogo_programas if programa.get("id") is not None}
+    programas_resueltos = []
+    no_resueltos = []
     for admitido in data.admitidos:
+        programa_id = None
+        if admitido.programa_nombre:
+            programa_id = programas_por_nombre.get(normalizar_nombre(admitido.programa_nombre))
+            if programa_id is None:
+                no_resueltos.append(admitido.programa_nombre)
+                continue
+        elif admitido.programa_id in ids_validos:
+            programa_id = admitido.programa_id
+        else:
+            no_resueltos.append(admitido.dni)
+            continue
+        programas_resueltos.append(programa_id)
+
+    if no_resueltos:
+        raise HTTPException(
+            status_code=422,
+            detail=f"No se pudo asociar el programa de estudio de los siguientes registros: {', '.join(no_resueltos[:10])}"
+        )
+
+    estudiantes_creados = 0
+    estudiantes_actualizados = 0
+    
+    for admitido, programa_id in zip(data.admitidos, programas_resueltos):
         # 1. Capa Anticorrupción: Validar si ya existe
         existing = await db.execute(select(Estudiante).where(Estudiante.dni == admitido.dni))
-        if existing.scalar_one_or_none():
+        estudiante_existente = existing.scalar_one_or_none()
+        if estudiante_existente:
+            if estudiante_existente.programa_id != programa_id:
+                estudiante_existente.programa_id = programa_id
+                estudiantes_actualizados += 1
             continue # Ya existe, saltamos
             
         # Generar código universitario estándar
@@ -133,7 +179,7 @@ async def ingesta_admitidos(request: Request, data: IngestaMasivaRequest, db: As
             dni=admitido.dni,
             nombres=admitido.nombres,
             apellidos=admitido.apellidos,
-            programa_id=admitido.programa_id,
+            programa_id=programa_id,
             celular=admitido.celular,
             email_personal=admitido.email_personal,
             modalidad_admision=admitido.modalidad,
@@ -155,7 +201,7 @@ async def ingesta_admitidos(request: Request, data: IngestaMasivaRequest, db: As
                 "dni": db_estudiante.dni,
                 "nombres": db_estudiante.nombres,
                 "apellidos": db_estudiante.apellidos,
-                "programa_id": admitido.programa_id,
+                "programa_id": programa_id,
                 "periodo_id": admitido.periodo_id,
                 "proceso_admision_id": data.proceso_admision_id
             },
@@ -166,10 +212,28 @@ async def ingesta_admitidos(request: Request, data: IngestaMasivaRequest, db: As
         estudiantes_creados += 1
         
     await db.commit()
-    return {"message": "Ingesta procesada", "estudiantes_creados": estudiantes_creados}
+    return {
+        "message": "Ingesta procesada",
+        "estudiantes_creados": estudiantes_creados,
+        "estudiantes_actualizados": estudiantes_actualizados,
+    }
 
 @router.post("/estudiantes/", response_model=EstudianteResponse, status_code=status.HTTP_201_CREATED)
 async def crear_estudiante(request: Request, data: EstudianteCreate, db: AsyncSession = Depends(get_db)):
+    identity = await get_identity(request, db)
+    if not es_superadmin(identity) and set(identity.roles).intersection(
+        {"secretaria_programa", "docente", "coordinador_programa"}
+    ):
+        if identity.programa_id is None:
+            raise HTTPException(
+                status_code=403,
+                detail="El usuario no tiene un programa de estudio asignado en su perfil."
+            )
+        student_data = data.model_dump()
+        student_data["programa_id"] = identity.programa_id
+    else:
+        student_data = data.model_dump()
+
     existing = await db.execute(select(Estudiante).where(
         or_(Estudiante.dni == data.dni, Estudiante.codigo_estudiante == data.codigo_estudiante)
     ))
@@ -180,7 +244,7 @@ async def crear_estudiante(request: Request, data: EstudianteCreate, db: AsyncSe
         else:
             raise HTTPException(status_code=400, detail="El código de estudiante ya existe. Genere uno nuevo.")
 
-    db_estudiante = Estudiante(**data.model_dump())
+    db_estudiante = Estudiante(**student_data)
     db.add(db_estudiante)
     await db.flush()
     
@@ -200,9 +264,24 @@ async def crear_estudiante(request: Request, data: EstudianteCreate, db: AsyncSe
     return db_estudiante
 
 @router.get("/estudiantes/")
-async def obtener_estudiantes(programa_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
+async def obtener_estudiantes(
+    request: Request,
+    programa_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db)
+):
     import traceback
     try:
+        identity = await get_identity(request, db)
+        if not es_superadmin(identity) and set(identity.roles).intersection(
+            {"secretaria_programa", "docente", "coordinador_programa"}
+        ):
+            if identity.programa_id is None:
+                raise HTTPException(
+                    status_code=403,
+                    detail="El usuario no tiene un programa de estudio asignado en su perfil."
+                )
+            programa_id = identity.programa_id
+
         query = select(Estudiante).order_by(Estudiante.apellidos)
         if programa_id is not None:
             query = query.where(Estudiante.programa_id == programa_id)
@@ -232,6 +311,8 @@ async def obtener_estudiantes(programa_id: Optional[int] = None, db: AsyncSessio
             }
             for r in rows
         ]
+    except HTTPException:
+        raise
     except Exception as e:
         tb = traceback.format_exc()
         print(f"[ERROR] obtener_estudiantes: {e}\n{tb}")

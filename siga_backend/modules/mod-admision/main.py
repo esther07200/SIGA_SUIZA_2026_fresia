@@ -8,6 +8,8 @@ from contextlib import asynccontextmanager
 from io import BytesIO
 import pandas as pd
 from datetime import datetime
+import re
+import unicodedata
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -132,6 +134,20 @@ def sanitize_row(row):
             result[str(k)] = v
     return result
 
+def _normalize_header(value):
+    value = unicodedata.normalize("NFD", str(value or "").strip().lower())
+    value = "".join(char for char in value if unicodedata.category(char) != "Mn")
+    return re.sub(r"[^a-z0-9]+", " ", value).strip()
+
+
+def _get_row_value(row, *headers):
+    normalized_headers = {_normalize_header(header) for header in headers}
+    for key, value in row.items():
+        if _normalize_header(key) in normalized_headers:
+            return value
+    return None
+
+
 from starlette.concurrency import run_in_threadpool
 
 def parse_excel_sync(contents: bytes):
@@ -165,34 +181,36 @@ def parse_excel_sync(contents: bytes):
     
     for _, row in df_reg.iterrows():
         row_dict = sanitize_row(row)
-        if not row_dict.get('NRO DE DOCUMENTO'): continue
-        dni = str(row_dict.get('NRO DE DOCUMENTO', '')).replace('.0', '').strip()
+        documento = _get_row_value(row_dict, "NRO DE DOCUMENTO", "NUMERO DE DOCUMENTO")
+        if not documento: continue
+        dni = str(documento).replace('.0', '').strip()
         admitidos_list.append(PostulanteAdmitido(
             dni=dni,
-            nombres=str(row_dict.get('NOMBRES', '')).strip(),
-            apellidos=f"{row_dict.get('APELLIDO PATERNO', '')} {row_dict.get('APELLIDO MATERNO', '')}".strip(),
-            programa_nombre=str(row_dict.get('PROGRAMA DE   ESTUDIOS', '')).strip(),
+            nombres=str(_get_row_value(row_dict, "NOMBRES") or '').strip(),
+            apellidos=f"{_get_row_value(row_dict, 'APELLIDO PATERNO') or ''} {_get_row_value(row_dict, 'APELLIDO MATERNO') or ''}".strip(),
+            programa_nombre=str(_get_row_value(row_dict, "PROGRAMA DE ESTUDIOS") or '').strip(),
             modalidad_admision="ORDINARIO",
-            email=str(row_dict.get('CORREO:', '')).strip() if row_dict.get('CORREO:') else None,
-            celular=str(row_dict.get('CELULAR', '')).replace('.0', '').strip() if row_dict.get('CELULAR') else None,
-            fecha_nacimiento=str(row_dict.get('FECHA NACIMIENTO: ', '')).strip() if row_dict.get('FECHA NACIMIENTO: ') else None,
+            email=str(_get_row_value(row_dict, "CORREO") or '').strip() or None,
+            celular=str(_get_row_value(row_dict, "CELULAR") or '').replace('.0', '').strip() or None,
+            fecha_nacimiento=str(_get_row_value(row_dict, "FECHA NACIMIENTO") or '').strip() or None,
             metadata_admision=row_dict
         ))
         
     for _, row in df_exo.iterrows():
         row_dict = sanitize_row(row)
-        if not row_dict.get('NRO DE DOCUMENTO'): continue
-        dni = str(row_dict.get('NRO DE DOCUMENTO', '')).replace('.0', '').strip()
-        modalidad = str(row_dict.get('MODALIDAD', 'EXONERADO')).strip()
+        documento = _get_row_value(row_dict, "NRO DE DOCUMENTO", "NUMERO DE DOCUMENTO")
+        if not documento: continue
+        dni = str(documento).replace('.0', '').strip()
+        modalidad = str(_get_row_value(row_dict, "MODALIDAD") or 'EXONERADO').strip()
         admitidos_list.append(PostulanteAdmitido(
             dni=dni,
-            nombres=str(row_dict.get('NOMBRES', '')).strip(),
-            apellidos=f"{row_dict.get('APELLIDO PATERNO', '')} {row_dict.get('APELLIDO MATERNO', '')}".strip(),
-            programa_nombre=str(row_dict.get('PROGRAMA DE   ESTUDIOS', '')).strip(),
+            nombres=str(_get_row_value(row_dict, "NOMBRES") or '').strip(),
+            apellidos=f"{_get_row_value(row_dict, 'APELLIDO PATERNO') or ''} {_get_row_value(row_dict, 'APELLIDO MATERNO') or ''}".strip(),
+            programa_nombre=str(_get_row_value(row_dict, "PROGRAMA DE ESTUDIOS") or '').strip(),
             modalidad_admision=modalidad,
-            email=str(row_dict.get('CORREO:', '')).strip() if row_dict.get('CORREO:') else None,
-            celular=str(row_dict.get('CELULAR', '')).replace('.0', '').strip() if row_dict.get('CELULAR') else None,
-            fecha_nacimiento=str(row_dict.get('FECHA NACIMIENTO: ', '')).strip() if row_dict.get('FECHA NACIMIENTO: ') else None,
+            email=str(_get_row_value(row_dict, "CORREO") or '').strip() or None,
+            celular=str(_get_row_value(row_dict, "CELULAR") or '').replace('.0', '').strip() or None,
+            fecha_nacimiento=str(_get_row_value(row_dict, "FECHA NACIMIENTO") or '').strip() or None,
             metadata_admision=row_dict
         ))
         
@@ -217,6 +235,8 @@ async def upload_excel(file: UploadFile = File(...), db: AsyncSession = Depends(
         
         return {"message": f"Se procesaron {len(admitidos_list)} estudiantes exitosamente. Resultados publicados."}
         
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -248,10 +268,10 @@ async def get_admitidos(db: AsyncSession = Depends(get_db)):
     
     for r in records:
         prog_name_upper = r.programa_nombre.upper()
-        # Fallback a 99 (Desconocido) en lugar de 1, para no mezclar con Sistemas
-        prog_id = 99
+        # La ingesta central resolverá el nombre contra el catálogo institucional.
+        prog_id = None
         for k,v in program_mapping.items():
-            if k in prog_name_upper or prog_name_upper in k:
+            if prog_name_upper and (k in prog_name_upper or prog_name_upper in k):
                 prog_id = v
                 break
                 
@@ -260,6 +280,7 @@ async def get_admitidos(db: AsyncSession = Depends(get_db)):
             "nombres": r.nombres,
             "apellidos": r.apellidos,
             "programa_id": prog_id, 
+            "programa_nombre": r.programa_nombre,
             "celular": r.celular,
             "email_personal": r.email,
             "fecha_nacimiento": r.fecha_nacimiento,
