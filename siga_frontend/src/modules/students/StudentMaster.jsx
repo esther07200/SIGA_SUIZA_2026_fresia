@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Fragment } from 'react';
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../core/auth/useAuth';
 import { API_BASE } from '../../core/api/client';
@@ -697,7 +697,14 @@ export function StudentMaster() {
       }
 
       const data = await res.json();
-      const dataArray = Array.isArray(data) ? data : [];
+      if (!Array.isArray(data)) {
+        const detalle = data?.detail || data?.error || 'El servidor devolvió una respuesta inválida al cargar estudiantes.';
+        setStudents([]);
+        setLoadError(detalle);
+        setLoading(false);
+        return;
+      }
+      const dataArray = data;
       const sorted = [...dataArray].sort((a, b) => compareStudentsByCarrera(a, b, programCatalog));
 
       const term = String(val || '').trim();
