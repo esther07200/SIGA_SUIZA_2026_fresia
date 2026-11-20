@@ -19,6 +19,12 @@ from .core.identity.database import get_identity_db
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
+# Sin SQL_ECHO activo, ningún engine debe loggear SQL: en Railway el volumen
+# de logs activa el rate limit de 500 logs/seg.
+if not settings.sql_echo:
+    for _sql_logger in ("sqlalchemy", "sqlalchemy.engine", "sqlalchemy.engine.Engine",
+                        "sqlalchemy.pool", "sqlalchemy.dialects", "sqlalchemy.dialects.postgresql"):
+        logging.getLogger(_sql_logger).setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(

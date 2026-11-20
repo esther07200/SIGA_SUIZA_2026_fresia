@@ -43,7 +43,7 @@ if _is_test:
     _engine_kwargs["poolclass"] = NullPool
     _engine_kwargs["echo"] = False
 else:
-    _engine_kwargs["echo"] = True
+    _engine_kwargs["echo"] = os.getenv("SQL_ECHO", "false").lower() in ("1", "true", "yes", "on")
 
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

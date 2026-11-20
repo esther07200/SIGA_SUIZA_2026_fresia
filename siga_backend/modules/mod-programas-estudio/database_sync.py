@@ -26,7 +26,7 @@ metadata = MetaData()
 Base = declarative_base(metadata=metadata)
 
 # Engine síncrono
-engine = create_engine(DATABASE_URL, echo=True)
+engine = create_engine(DATABASE_URL, echo=os.getenv("SQL_ECHO", "false").lower() in ("1", "true", "yes", "on"))
 
 # Session local síncrona
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

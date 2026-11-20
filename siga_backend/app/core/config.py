@@ -10,6 +10,9 @@ class CoreSettings(BaseSettings):
     environment: str = "development"
     secret_key: str = "change-me-in-production"
     debug: bool = True
+    # Log de SQL de SQLAlchemy. OFF por defecto: en Railway inunda los logs
+    # y activa el rate limit de 500 logs/seg. Activar con SQL_ECHO=true en local.
+    sql_echo: bool = Field(default=False, description="Loggear SQL (SQLAlchemy echo)")
     
     # Database (Solo para Identity del Core)
     DB_HOST: str = "localhost"
@@ -34,6 +37,8 @@ class CoreSettings(BaseSettings):
     # NATS Event Bus
     enable_nats: bool = Field(default=True, description="Habilitar NATS Event Bus")
     nats_url: str = Field(default="nats://localhost:4222", description="URL de NATS")
+    nats_connect_timeout: int = Field(default=5, description="Timeout (s) del intento de conexión a NATS")
+    nats_retry_seconds: int = Field(default=300, description="Segundos entre reintentos de NATS si falla")
     
     # 🔄 RESILIENCIA - Configuraciones nuevas
     # Cache distribuido

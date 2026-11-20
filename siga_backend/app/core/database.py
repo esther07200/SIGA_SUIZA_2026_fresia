@@ -17,7 +17,7 @@ _SSL_EXEMPT_HOSTS = ("localhost", "127.0.0.1", "::1", "host.docker.internal", "p
 connect_args = {"ssl": _ssl_ctx} if settings.DB_HOST not in _SSL_EXEMPT_HOSTS else {}
 
 # Engine asíncrono para el Core
-engine = create_async_engine(settings.database_url, echo=settings.debug, connect_args=connect_args)
+engine = create_async_engine(settings.database_url, echo=settings.sql_echo, connect_args=connect_args)
 
 # Session local asíncrona
 AsyncSessionLocal = sessionmaker(

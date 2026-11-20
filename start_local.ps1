@@ -22,6 +22,9 @@ $env:DB_PASSWORD = "esther123"
 $env:DB_NAME     = "siga_core"
 $env:SKIP_MIGRATIONS = "true"
 
+# En local se quiere el SQL en consola; en Railway esto queda OFF (SQL_ECHO no definido)
+$env:SQL_ECHO = "true"
+
 # Al ejecutar nativo no hay DNS de Docker: los manifests apuntan al nombre del
 # servicio (mod-xxx). El core necesita saber que aqui todo vive en localhost.
 $modulos = @(
