@@ -220,39 +220,66 @@ async def importar_plan_minedu(
         db.add(db_plan)
         await db.flush()
 
-    # Sincronizar módulos y unidades por código para que reintentar no los duplique
-    for mod_data in data.get("modulos", []):
-        unidades_data = mod_data.get("unidades", [])
-        result_modulo = await db.execute(
-            select(ModuloPlan).where(
-                ModuloPlan.plan_id == db_plan.id,
-                ModuloPlan.codigo == mod_data.get("codigo")
-            )
-        )
-        db_modulo = result_modulo.scalar_one_or_none()
-        modulo_fields = {k: v for k, v in mod_data.items() if k in {"codigo", "nombre", "horas", "creditos", "orden"}}
+    # Leer en lote para evitar una consulta por cada unidad de planes grandes.
+    modulos_data = data.get("modulos", [])
+    result_modulos = await db.execute(
+        select(ModuloPlan).where(ModuloPlan.plan_id == db_plan.id)
+    )
+    modulos_por_codigo = {}
+    for modulo in result_modulos.scalars().all():
+        if modulo.codigo is not None:
+            modulos_por_codigo.setdefault(modulo.codigo, modulo)
+
+    modulos_actuales = {}
+    modulos_nuevos = []
+    for mod_data in modulos_data:
+        codigo_modulo = mod_data.get("codigo")
+        db_modulo = modulos_por_codigo.get(codigo_modulo)
+        modulo_fields = {
+            k: v for k, v in mod_data.items()
+            if k in {"codigo", "nombre", "horas", "creditos", "orden"}
+        }
         if db_modulo:
             for key, value in modulo_fields.items():
                 setattr(db_modulo, key, value)
         else:
             db_modulo = ModuloPlan(**modulo_fields, plan_id=db_plan.id)
             db.add(db_modulo)
-            await db.flush()
+            modulos_nuevos.append(db_modulo)
+            if codigo_modulo is not None:
+                modulos_por_codigo[codigo_modulo] = db_modulo
+        modulos_actuales[codigo_modulo] = db_modulo
 
-        for ud_data in unidades_data:
-            result_unidad = await db.execute(
-                select(UnidadPlan).where(
-                    UnidadPlan.modulo_id == db_modulo.id,
-                    UnidadPlan.codigo == ud_data.get("codigo")
-                )
-            )
-            db_unidad = result_unidad.scalar_one_or_none()
-            unidad_fields = {k: v for k, v in ud_data.items() if k in {"codigo", "nombre", "horas", "creditos", "tipo", "orden"}}
+    if modulos_nuevos:
+        await db.flush()
+
+    ids_modulos = [modulo.id for modulo in modulos_actuales.values()]
+    unidades_por_codigo = {}
+    if ids_modulos:
+        result_unidades = await db.execute(
+            select(UnidadPlan).where(UnidadPlan.modulo_id.in_(ids_modulos))
+        )
+        for unidad in result_unidades.scalars().all():
+            if unidad.codigo is not None:
+                unidades_por_codigo.setdefault((unidad.modulo_id, unidad.codigo), unidad)
+
+    for mod_data in modulos_data:
+        db_modulo = modulos_actuales[mod_data.get("codigo")]
+        for ud_data in mod_data.get("unidades", []):
+            codigo_unidad = ud_data.get("codigo")
+            db_unidad = unidades_por_codigo.get((db_modulo.id, codigo_unidad))
+            unidad_fields = {
+                k: v for k, v in ud_data.items()
+                if k in {"codigo", "nombre", "horas", "creditos", "tipo", "orden"}
+            }
             if db_unidad:
                 for key, value in unidad_fields.items():
                     setattr(db_unidad, key, value)
             else:
-                db.add(UnidadPlan(**unidad_fields, modulo_id=db_modulo.id))
+                db_unidad = UnidadPlan(**unidad_fields, modulo_id=db_modulo.id)
+                db.add(db_unidad)
+                if codigo_unidad is not None:
+                    unidades_por_codigo[(db_modulo.id, codigo_unidad)] = db_unidad
             
     # Registrar en Outbox
     request_id = request.headers.get("X-Request-ID", "unknown")
