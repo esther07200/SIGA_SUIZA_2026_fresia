@@ -28,7 +28,10 @@ class EnrollmentSettings:
         self.max_intentos = _int_env("ENROLLMENT_MAX_INTENTOS", 3)
 
         # Comunicación entre módulos (malla y prerrequisitos).
-        self.programas_url = os.getenv("PROGRAMAS_MODULE_URL", "http://mod-programas-estudio:8005")
+        self.programas_url = (
+            os.getenv("SIGA_MODULE_PROGRAMAS_ESTUDIO_URL")
+            or os.getenv("PROGRAMAS_MODULE_URL", "http://mod-programas-estudio:8005")
+        )
         self.planes_url = os.getenv("PLANES_MODULE_URL", "http://mod-planes-estudio:8002")
         self.intermodule_timeout = float(os.getenv("INTERMODULE_TIMEOUT", "5"))
 

@@ -14,7 +14,7 @@ from config import enrollment_settings
 logger = logging.getLogger(__name__)
 
 _LOCALHOST = {
-    "programas": "http://localhost:8005",
+    "programas": "http://127.0.0.1:8005",
     "planes": "http://localhost:8002",
 }
 
