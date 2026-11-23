@@ -733,16 +733,22 @@ export function StudentMaster() {
   };
 
   useEffect(() => {
-    if (userRole !== 'invitado') {
-      const isProgramScoped = !user?.is_superuser && userRoles.some(role =>
-        ['secretaria_programa', 'docente', 'coordinador_programa'].includes(String(role).toLowerCase())
-      );
-      if (isProgramScoped && user?.programa_id && currentPrograma !== String(user.programa_id)) {
-        setCurrentPrograma(String(user.programa_id));
-      } else {
-        handleSearch(searchTerm);
+    if (userRole === 'invitado') return;
+
+    const isProgramScoped = !user?.is_superuser && userRoles.some(role =>
+      ['secretaria_programa', 'docente', 'coordinador_programa'].includes(String(role).toLowerCase())
+    );
+
+    if (isProgramScoped && user?.programa_id) {
+      const pid = String(user.programa_id);
+      if (currentPrograma !== pid) {
+        // Forzar al programa del usuario — esto volverá a disparar el efecto con el ID correcto
+        setCurrentPrograma(pid);
+        return;
       }
     }
+
+    handleSearch(searchTerm);
   }, [currentPrograma, userRole, user?.programa_id, programCatalog]);
 
   const handleFotoChange = (e) => {

@@ -119,7 +119,13 @@ async def ingesta_admitidos(request: Request, data: IngestaMasivaRequest, db: As
     Endpoint para ingestar de forma masiva (PUSH) los admitidos desde la App Externa de Admisión.
     Crea los expedientes de estudiantes y dispara eventos para integrarlos al ecosistema (crear usuarios, matricular, etc).
     """
+    # Obtener catálogo de programas: primero vía HTTP, con fallback directo a BD
     catalogo_programas = await fetch_programas()
+    if not catalogo_programas:
+        # Fallback directo a BD local cuando el microservicio no es accesible (ej. desarrollo local)
+        res_prog = await db.execute(text("SELECT id, nombre, codigo FROM programas_estudio WHERE estado = 'activo'"))
+        catalogo_programas = [{"id": r[0], "nombre": r[1], "codigo": r[2]} for r in res_prog.fetchall()]
+
     if not catalogo_programas:
         raise HTTPException(status_code=503, detail="No se pudo consultar el catálogo de programas de estudio.")
 
@@ -128,38 +134,69 @@ async def ingesta_admitidos(request: Request, data: IngestaMasivaRequest, db: As
         without_accents = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
         return re.sub(r"[^a-z0-9]+", " ", without_accents.lower()).strip()
 
+    # Mapa nombre_normalizado -> id  (incluye todas las variantes de nombres del catálogo)
     programas_por_nombre = {
         normalizar_nombre(programa.get("nombre", "")): programa["id"]
         for programa in catalogo_programas
         if programa.get("id") is not None
     }
     ids_validos = {programa["id"] for programa in catalogo_programas if programa.get("id") is not None}
+    # Lista de (nombre_normalizado, id) para búsqueda parcial
+    programas_lista = [(normalizar_nombre(p.get("nombre", "")), p["id"]) for p in catalogo_programas if p.get("id")]
+
+    def resolver_programa(programa_nombre: str, programa_id_hint) -> int | None:
+        """Resuelve el programa_id con coincidencia exacta, parcial y por ID fallback."""
+        # 1. Coincidencia exacta por nombre normalizado
+        nombre_norm = normalizar_nombre(programa_nombre or "")
+        if nombre_norm and nombre_norm in programas_por_nombre:
+            return programas_por_nombre[nombre_norm]
+        # 2. Búsqueda parcial: el nombre del catálogo contiene el nombre del admitido o viceversa
+        if nombre_norm:
+            for cat_norm, cat_id in programas_lista:
+                if cat_norm and (nombre_norm in cat_norm or cat_norm in nombre_norm):
+                    return cat_id
+            # 3. Búsqueda por palabras clave principales (primera palabra significativa)
+            palabras = [p for p in nombre_norm.split() if len(p) > 4]
+            for palabra in palabras:
+                for cat_norm, cat_id in programas_lista:
+                    if palabra in cat_norm:
+                        return cat_id
+        # 4. Fallback por programa_id si es un ID válido en BD
+        if programa_id_hint and programa_id_hint in ids_validos:
+            return programa_id_hint
+        return None
+
     programas_resueltos = []
     no_resueltos = []
     for admitido in data.admitidos:
-        programa_id = None
-        if admitido.programa_nombre:
-            programa_id = programas_por_nombre.get(normalizar_nombre(admitido.programa_nombre))
-            if programa_id is None:
-                no_resueltos.append(admitido.programa_nombre)
-                continue
-        elif admitido.programa_id in ids_validos:
-            programa_id = admitido.programa_id
-        else:
-            no_resueltos.append(admitido.dni)
+        programa_id = resolver_programa(
+            admitido.programa_nombre or "",
+            getattr(admitido, "programa_id", None)
+        )
+        if programa_id is None:
+            no_resueltos.append(admitido.programa_nombre or admitido.dni)
+            # NO abortamos todo el lote, sólo saltamos este registro
             continue
         programas_resueltos.append(programa_id)
 
-    if no_resueltos:
+    # Si NO se pudo resolver NINGUNO, es probable un error de configuración
+    if no_resueltos and not programas_resueltos:
         raise HTTPException(
             status_code=422,
-            detail=f"No se pudo asociar el programa de estudio de los siguientes registros: {', '.join(no_resueltos[:10])}"
+            detail=f"No se pudo asociar ningún programa. Registros no resueltos: {', '.join(no_resueltos[:10])}"
         )
 
     estudiantes_creados = 0
     estudiantes_actualizados = 0
     
-    for admitido, programa_id in zip(data.admitidos, programas_resueltos):
+    # Construir pares (admitido, programa_id) sólo para los que sí se resolvieron
+    admitidos_resueltos = [
+        (admitido, resolver_programa(admitido.programa_nombre or "", getattr(admitido, "programa_id", None)))
+        for admitido in data.admitidos
+        if resolver_programa(admitido.programa_nombre or "", getattr(admitido, "programa_id", None)) is not None
+    ]
+
+    for admitido, programa_id in admitidos_resueltos:
         # 1. Capa Anticorrupción: Validar si ya existe
         existing = await db.execute(select(Estudiante).where(Estudiante.dni == admitido.dni))
         estudiante_existente = existing.scalar_one_or_none()
@@ -216,6 +253,7 @@ async def ingesta_admitidos(request: Request, data: IngestaMasivaRequest, db: As
         "message": "Ingesta procesada",
         "estudiantes_creados": estudiantes_creados,
         "estudiantes_actualizados": estudiantes_actualizados,
+        "registros_no_resueltos": no_resueltos,
     }
 
 @router.post("/estudiantes/", response_model=EstudianteResponse, status_code=status.HTTP_201_CREATED)

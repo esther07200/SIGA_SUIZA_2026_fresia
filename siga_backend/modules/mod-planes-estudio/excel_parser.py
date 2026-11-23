@@ -1,4 +1,4 @@
-import pandas as pd
+﻿import pandas as pd
 import io
 import logging
 from typing import Dict, Any, Tuple, List, Optional
@@ -42,16 +42,24 @@ class ExcelMineduParser:
             for j, val in enumerate(row.values):
                 if pd.notna(val) and isinstance(val, str):
                     val_lower = val.lower().strip()
+                    # Ignorar celdas largas (párrafos descriptivos, no encabezados de tabla)
+                    if len(val_lower) > 80:
+                        continue
+                    # Ignorar "unidad de competencia" (confunde con "unidad didáctica")
+                    if "unidad de competencia" in val_lower:
+                        continue
                     for kw in required_keywords:
                         if kw in val_lower:
                             found_cols[kw] = j
                     # Also look for exact period columns
                     if val_lower in ["i", "ii", "iii", "iv", "v", "vi", "1", "2", "3", "4", "5", "6", "periodo"]:
                         found_cols[val_lower] = j
-            
-            if len([k for k in found_cols.keys() if any(rk in k for rk in required_keywords)]) >= 2 and any("unidad" in k for k in found_cols.keys()):
+
+            # Verificar que al menos 2 columnas de required_keywords tengan índices DISTINTOS
+            matched_col_indices = {col for kw, col in found_cols.items() if any(rk in kw for rk in required_keywords)}
+            if len(matched_col_indices) >= 2 and any("unidad" in k for k in found_cols.keys()):
                 return i, found_cols
-                
+
         return None
 
     @staticmethod
@@ -179,7 +187,7 @@ class ExcelMineduParser:
                             
                             ud_name_raw = df_mod.iloc[idx, ud_col]
                             if pd.isna(ud_name_raw) or str(ud_name_raw).strip() in ["", "0"]: continue
-                            ud_name_str = str(ud_name_raw).strip()
+                            ud_name_str = str(ud_name_raw).strip()[:250]  # Truncar para evitar overflow VARCHAR(255)
                             if ud_name_str.lower() in ["unidad didáctica", "unidad didactica"]: continue
                             if any(stop in ud_name_str.lower() for stop in ["total", "sumatoria"]): break
                             

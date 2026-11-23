@@ -29,8 +29,25 @@ export function EnrollmentDashboard() {
   const [view, setView] = useState('list'); // 'list', 'process' or 'diagram'
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [currentPrograma, setCurrentPrograma] = useState('ALL');
+  const [programCatalog, setProgramCatalog] = useState([]);
 
+  // Para secretaria_programa y docente, el programa se bloquea al del usuario.
+  // Para superadmin/admin se usa el selector dinámico.
+  const isProgramScoped = !user?.is_superuser && ['secretaria_programa', 'docente', 'coordinador_programa'].some(r => userRoles.includes(r));
+  const [currentPrograma, setCurrentPrograma] = useState(
+    isProgramScoped && user?.programa_id ? String(user.programa_id) : 'ALL'
+  );
+
+  // Cargar catálogo de programas dinámicamente para el selector de admin
+  useEffect(() => {
+    if (!['superadmin', 'admin'].includes(userRole)) return;
+    fetch(`${API_BASE}/api/mod-programas-estudio/programas`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    })
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setProgramCatalog(data); })
+      .catch(() => {});
+  }, [userRole]);
 
   const fetchStudents = async (searchVal = searchTerm) => {
     setLoading(true);
@@ -63,17 +80,21 @@ export function EnrollmentDashboard() {
   };
 
   useEffect(() => {
-    if (userRole !== 'invitado') {
-      if (userRole === 'secretaria_programa' && currentPrograma === 'ALL') {
-        const fallbackId = user?.email === 'secretaria_prog@siga.edu' ? '2' : '1';
-        setCurrentPrograma(user?.programa_id ? String(user.programa_id) : fallbackId);
-      } else {
-        fetchStudents();
+    if (userRole === 'invitado') return;
+
+    // Para roles acotados al programa, aseguramos que currentPrograma refleje su programa_id
+    if (isProgramScoped && user?.programa_id) {
+      const pid = String(user.programa_id);
+      if (currentPrograma !== pid) {
+        setCurrentPrograma(pid);
+        return; // El cambio de currentPrograma disparará el efecto de nuevo
       }
     }
-    // Solo debe re-ejecutarse al cambiar de programa o rol (no en cada tecla del buscador).
+
+    fetchStudents();
+    // Solo debe re-ejecutarse al cambiar de programa o rol.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPrograma, userRole]);
+  }, [currentPrograma, userRole, user?.programa_id]);
 
   const handleEnrollClick = (student) => {
     setSelectedStudent(student);
@@ -221,17 +242,15 @@ export function EnrollmentDashboard() {
             }}
           >
             <option value="ALL">Todos los Programas</option>
-            <option value="1">Desarrollo de Sistemas de Información</option>
-            <option value="2">Enfermería Técnica</option>
-            <option value="4">Gestión / Asistencia Administrativa</option>
-            <option value="5">Contabilidad</option>
-            <option value="6">Mecatrónica Automotriz</option>
-            <option value="7">Electricidad Industrial</option>
-            <option value="8">Administración de Operaciones Turísticas</option>
-            <option value="9">Construcción Civil</option>
-            <option value="10">Producción Agropecuaria</option>
-            <option value="11">Manejo Forestal</option>
+            {programCatalog.map(p => (
+              <option key={p.id} value={String(p.id)}>{p.nombre}</option>
+            ))}
           </select>
+        )}
+        {isProgramScoped && user?.programa_id && (
+          <span className="px-3 py-1 text-sm font-semibold text-primary bg-primary/10 rounded-lg">
+            {programCatalog.find(p => String(p.id) === String(user.programa_id))?.nombre || `Programa ${user.programa_id}`}
+          </span>
         )}
         <span className="px-4 text-slate-400 text-xl">🔍</span>
         <input 
