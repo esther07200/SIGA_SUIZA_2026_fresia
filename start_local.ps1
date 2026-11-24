@@ -27,6 +27,8 @@ $env:SQL_ECHO = "true"
 
 # Al ejecutar nativo no hay DNS de Docker: los manifests apuntan al nombre del
 # servicio (mod-xxx). El core necesita saber que aqui todo vive en localhost.
+# PYTHONPATH: los modulos importan shared.* desde la raiz de siga_backend.
+$env:PYTHONPATH = $backend
 $modulos = @(
     @{ n = "mod-usuarios";          p = 8001 },
     @{ n = "mod-planes-estudio";    p = 8002 },

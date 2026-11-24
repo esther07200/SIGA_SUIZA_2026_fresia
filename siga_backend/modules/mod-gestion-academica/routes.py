@@ -155,15 +155,16 @@ async def ingesta_admitidos(request: Request, data: IngestaMasivaRequest, db: As
             for cat_norm, cat_id in programas_lista:
                 if cat_norm and (nombre_norm in cat_norm or cat_norm in nombre_norm):
                     return cat_id
-            # 3. Búsqueda por palabras clave principales (primera palabra significativa)
+        # 3. Hint de id enviado por el módulo de admisión (catálogo oficial alineado)
+        if programa_id_hint and programa_id_hint in ids_validos:
+            return programa_id_hint
+        # 4. Búsqueda por palabras clave principales (último recurso, puede ser ambigua)
+        if nombre_norm:
             palabras = [p for p in nombre_norm.split() if len(p) > 4]
             for palabra in palabras:
                 for cat_norm, cat_id in programas_lista:
                     if palabra in cat_norm:
                         return cat_id
-        # 4. Fallback por programa_id si es un ID válido en BD
-        if programa_id_hint and programa_id_hint in ids_validos:
-            return programa_id_hint
         return None
 
     programas_resueltos = []

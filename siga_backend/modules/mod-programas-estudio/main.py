@@ -9,7 +9,8 @@ if _app_root not in sys.path:
     sys.path.insert(0, _app_root)
 
 from routes import router
-from database import init_db
+from database import init_db, AsyncSessionLocal
+from seed import seed_catalogo_si_vacio
 import asyncio
 from outbox_worker import outbox_worker
 
@@ -53,6 +54,13 @@ async def startup():
         except Exception as e:
             print(f"Intento {attempt + 1}/5 fallido al conectar con BD: {e}. Reintentando en 2s...")
             await asyncio.sleep(2)
+    try:
+        async with AsyncSessionLocal() as session:
+            inserted = await seed_catalogo_si_vacio(session)
+        if inserted:
+            print(f"Seed: catálogo de {inserted} programas de estudio insertado (tabla vacía)")
+    except Exception as e:
+        print(f"Seed de programas de estudio omitido: {e}")
     asyncio.create_task(outbox_worker())
     print("Modulo de Programas de Estudio iniciado")
 

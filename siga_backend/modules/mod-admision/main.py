@@ -250,20 +250,20 @@ async def get_admitidos(db: AsyncSession = Depends(get_db)):
     # Formateamos para el core
     formatted = []
     
-    # Mapping simplificado para el programa_id temporal (el core deberia mapear, pero para MVP enviamos un fallback id)
-    # Mapeo exacto alineado con los IDs del frontend (1=Arquitectura/Sistemas, 2=Enfermeria, 4=Administracion, 5=Contabilidad, 6=Mecatronica)
+    # Mapping alineado con el catálogo oficial (docs/10-LOGICA-NEGOCIO.md §1.2, ids 1-11).
+    # La ingesta central resuelve el nombre contra el catálogo; el id sólo es hint.
     program_mapping = {
-        "DESARROLLO DE SISTEMAS DE INFORMACIÓN": 1,
-        "ENFERMERÍA TÉCNICA": 2,
+        "ENFERMERÍA TÉCNICA": 1,
+        "CONTABILIDAD": 2,
+        "MECATRÓNICA AUTOMOTRIZ": 3,
         "GESTIÓN ADMINISTRATIVA": 4,
-        "ASISTENCIA ADMINISTRATIVA": 4,
-        "CONTABILIDAD": 5,
-        "MECATRÓNICA AUTOMOTRIZ": 6,
-        "ELECTRICIDAD INDUSTRIAL": 7,
-        "ADMINISTRACIÓN DE OPERACIONES TURÍSTICAS": 8,
-        "CONSTRUCCIÓN CIVIL": 9,
-        "PRODUCCIÓN AGROPECUARIA": 10,
-        "MANEJO FORESTAL": 11
+        "PRODUCCIÓN AGROPECUARIA": 5,
+        "CONSTRUCCIÓN CIVIL": 6,
+        "DESARROLLO DE SISTEMAS DE INFORMACIÓN": 7,
+        "ELECTRICIDAD INDUSTRIAL": 8,
+        "ADMINISTRACIÓN DE OPERACIONES TURÍSTICAS": 9,
+        "MANEJO FORESTAL": 10,
+        "ASISTENCIA ADMINISTRATIVA": 11,
     }
     
     for r in records:
