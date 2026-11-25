@@ -5,7 +5,7 @@ from sqlalchemy.pool import NullPool
 import os
 import sys
 from datetime import datetime
-from sqlalchemy import Column, Integer, DateTime, String, JSON, Boolean
+from sqlalchemy import Column, Integer, DateTime, String, JSON, Boolean, text
 
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
@@ -61,10 +61,28 @@ async def get_db():
         finally:
             await db.close()
 
+CODIGOS_CATALOGO_SEED = (
+    "ENF", "CON", "MET", "GAS-ADM", "PRO-AG", "CON-CIV",
+    "DSI", "ELT", "AOT", "MAN-FOR", "ASI-ADM",
+)
+
+MIGRACIONES = [
+    "ALTER TABLE periodos_academicos ADD COLUMN IF NOT EXISTS nombre VARCHAR(120)",
+    "ALTER TABLE programas_estudio ADD COLUMN IF NOT EXISTS origen VARCHAR(20) DEFAULT 'manual'",
+    "UPDATE programas_estudio SET origen = 'seed' "
+    f"WHERE origen IS DISTINCT FROM 'seed' AND codigo IN {CODIGOS_CATALOGO_SEED}",
+]
+
+
 async def init_db():
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all, checkfirst=True)
+            for sentencia in MIGRACIONES:
+                try:
+                    await conn.execute(text(sentencia))
+                except Exception as exc:
+                    print(f"  • migration skipped ({sentencia[:60]}...): {exc}")
         print("Tablas creadas/verificadas")
     except Exception as e:
         print(f"init_db: tablas ya existen o error menor: {e}")

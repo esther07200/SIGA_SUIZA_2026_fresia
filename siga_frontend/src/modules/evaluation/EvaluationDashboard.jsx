@@ -103,6 +103,7 @@ function mapSaveError(error) {
     return cleanMsg || "El acta de esta unidad está cerrada o el plazo ha vencido";
   }
   if (status === 422 || /422/i.test(msg) || /inv[aá]lid/i.test(msg)) {
+    if (detail) return detail;
     return "Dato inválido (la nota debe ser un entero entre 0 y 20)";
   }
   if (status === 500 || /500|failed to fetch|network/i.test(msg)) {

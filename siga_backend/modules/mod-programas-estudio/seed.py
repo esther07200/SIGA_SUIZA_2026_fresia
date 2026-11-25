@@ -42,6 +42,7 @@ async def seed_catalogo_si_vacio(session) -> int:
             creditos_totales=creditos,
             modalidad="presencial",
             estado="activo",
+            origen="seed",
         ))
     await session.commit()
     return len(CATALOGO)

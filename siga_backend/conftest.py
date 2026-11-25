@@ -144,6 +144,25 @@ def pytest_sessionstart(session):
 
     verify_all_module_engines()
 
+    try:
+        asyncio.run(_ensure_test_schema())
+    except Exception as e:
+        print(f"No se pudo verificar el esquema de siga_test: {e}")
+
+
+async def _ensure_test_schema():
+    """Aplica migraciones idempotentes necesarias para que siga_test coincida con los modelos."""
+    sentencias = [
+        "ALTER TABLE periodos_academicos ADD COLUMN IF NOT EXISTS nombre VARCHAR(120)",
+        "ALTER TABLE programas_estudio ADD COLUMN IF NOT EXISTS origen VARCHAR(20) DEFAULT 'manual'",
+    ]
+    async with test_engine.begin() as conn:
+        for sentencia in sentencias:
+            try:
+                await conn.execute(text(sentencia))
+            except Exception as exc:  # pragma: no cover - depende del estado local de la BD
+                print(f"Migration check skipped ({sentencia}): {exc}")
+
 
 # ==============================================================================
 # 4. LIMPIEZA CON SEGURO RE-VERIFICADO

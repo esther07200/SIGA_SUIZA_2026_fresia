@@ -52,6 +52,15 @@ export function CoordinatorAcademic() {
   const { toast } = useSafeToast();
   const { confirm } = useSafeConfirm();
 
+  const rawRoles = Array.isArray(user?.roles) ? user.roles : (user?.role ? [user.role] : []);
+  const userRoles = rawRoles
+    .map(r => (typeof r === 'string' ? r : (r?.name || r?.nombre)))
+    .filter(Boolean);
+  const isAdmin = Boolean(
+    user?.is_superuser || userRoles.includes('admin') || userRoles.includes('superadmin')
+  );
+  const isCoordinador = !user?.is_superuser && userRoles.includes('coordinador_programa');
+
   const [activeTab, setActiveTab] = useState('carga'); // 'carga', 'horarios'
   const [horariosSubTab, setHorariosSubTab] = useState('visual'); // 'excel', 'visual'
   const [loading, setLoading] = useState(false);
@@ -152,13 +161,18 @@ export function CoordinatorAcademic() {
       return;
     }
 
-    // Filter personal for the selected program (or unassigned/global) and exclude secretaries
-    const filteredStaff = personal.filter(p => 
-      p?.perfil && 
-      (!p.perfil.programa_estudio_id || p.perfil.programa_estudio_id === parseInt(selectedProgram) || p.perfil.programa_estudio_id == selectedProgram) &&
-      p.perfil.cargo_funcional !== 'SECRETARIA_PROGRAMA' &&
-      p?.usuario
-    );
+    const selectedId = parseInt(selectedProgram, 10);
+    const filteredStaff = personal.filter(p => {
+      if (!p?.perfil || !p?.usuario) return false;
+      if (p.perfil.cargo_funcional === 'SECRETARIA_PROGRAMA') return false;
+      if (isAdmin) return true;
+      if (isCoordinador) {
+        return p.perfil.programa_estudio_id != null
+          && Number(p.perfil.programa_estudio_id) === selectedId;
+      }
+      return !p.perfil.programa_estudio_id
+        || Number(p.perfil.programa_estudio_id) === selectedId;
+    });
     // Map to the format the form expects (d.id, d.full_name)
     const staffFormat = filteredStaff.map(p => p.usuario);
     setDocentes(staffFormat);
@@ -180,7 +194,7 @@ export function CoordinatorAcademic() {
       }
     };
     fetchMalla();
-  }, [selectedProgram, personal]);
+  }, [selectedProgram, personal, isAdmin, isCoordinador]);
 
   const fetchCargaYHorarios = useCallback(async () => {
     setLoading(true);
@@ -353,9 +367,6 @@ export function CoordinatorAcademic() {
       setLoading(false);
     }
   };
-
-  const userRoles = Array.isArray(user?.roles) ? user.roles : (user?.role ? [user.role] : []);
-  const isCoordinador = !user?.is_superuser && userRoles.includes('coordinador_programa');
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">

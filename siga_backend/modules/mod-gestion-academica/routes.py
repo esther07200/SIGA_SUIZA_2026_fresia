@@ -14,6 +14,8 @@ import unicodedata
 import re
 from shared.identity import get_identity, es_superadmin
 from intermodule import fetch_programas
+from domain import EstadoMatricula, EstadoCurso
+from usuario_estudiante import asegurar_usuario_estudiante
 
 router = APIRouter()
 
@@ -306,6 +308,7 @@ async def crear_estudiante(request: Request, data: EstudianteCreate, db: AsyncSe
 async def obtener_estudiantes(
     request: Request,
     programa_id: Optional[int] = None,
+    periodo_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db)
 ):
     import traceback
@@ -324,6 +327,17 @@ async def obtener_estudiantes(
         query = select(Estudiante).order_by(Estudiante.apellidos)
         if programa_id is not None:
             query = query.where(Estudiante.programa_id == programa_id)
+        if periodo_id is not None:
+            vigente_en_periodo = select(Matricula.id).where(
+                Matricula.estudiante_id == Estudiante.id,
+                Matricula.periodo_id == periodo_id,
+                Matricula.estado_matricula.notin_(list(EstadoMatricula.anuladas())),
+            ).exists()
+            ninguna_matricula = ~select(Matricula.id).where(
+                Matricula.estudiante_id == Estudiante.id,
+                Matricula.estado_matricula.notin_(list(EstadoMatricula.anuladas())),
+            ).exists()
+            query = query.where(or_(ninguna_matricula, vigente_en_periodo))
         result = await db.execute(query)
         rows = result.scalars().all()
         print(f"[DEBUG] Estudiantes encontrados: {len(rows)}")
@@ -838,7 +852,7 @@ async def realizar_matricula(request: Request, data: MatriculaCreate, db: AsyncS
         select(Matricula).where(
             Matricula.estudiante_id == data.estudiante_id,
             Matricula.periodo_id == data.periodo_id,
-            Matricula.estado_matricula != 'anulado'
+            Matricula.estado_matricula.notin_(list(EstadoMatricula.anuladas()))
         )
     )
     if existing.scalars().first():
@@ -851,6 +865,7 @@ async def realizar_matricula(request: Request, data: MatriculaCreate, db: AsyncS
 
     # Separar detalles
     matricula_data = data.model_dump(exclude={"detalles"})
+    matricula_data["estado_matricula"] = EstadoMatricula.CONFIRMADA.value
     db_matricula = Matricula(**matricula_data)
     db.add(db_matricula)
     await db.flush() # Para obtener db_matricula.id
@@ -871,7 +886,13 @@ async def realizar_matricula(request: Request, data: MatriculaCreate, db: AsyncS
     
     db.add(OutboxEvent(event_type=event_payload["event_type"], payload=event_payload))
     await db.commit()
-    
+
+    estudiante = (await db.execute(
+        select(Estudiante).where(Estudiante.id == data.estudiante_id)
+    )).scalar_one_or_none()
+    if estudiante:
+        await asegurar_usuario_estudiante(db, estudiante)
+
     result = await db.execute(select(Matricula).options(selectinload(Matricula.detalles)).where(Matricula.id == db_matricula.id))
     return result.scalar_one()
 
@@ -887,13 +908,24 @@ async def obtener_matriculas_estudiante(estudiante_id: int, db: AsyncSession = D
 
 @router.get("/matriculas/unidad/{unidad_id}/periodo/{periodo_id}")
 async def obtener_estudiantes_por_unidad(unidad_id: int, periodo_id: int, db: AsyncSession = Depends(get_db)):
+    """Nómina de estudiantes calificables de una unidad en un periodo.
+
+    Reproduce la condición canónica de mod-evaluacion: la matrícula debe estar
+    'confirmada' y el curso no debe estar 'retirado'. Excluir pendientes y
+    anuladas evita que el docente intente guardar notas sobre matrículas que el
+    motor de evaluación rechaza con 409.
+    """
     query = (
         select(Estudiante, MatriculaDetalle.id.label("matricula_detalle_id"))
         .join(Matricula, Matricula.estudiante_id == Estudiante.id)
         .join(MatriculaDetalle, MatriculaDetalle.matricula_id == Matricula.id)
         .where(Matricula.periodo_id == periodo_id)
         .where(MatriculaDetalle.unidad_didactica_id == unidad_id)
-        .where(Matricula.estado_matricula != "anulada")
+        .where(Matricula.estado_matricula == EstadoMatricula.CONFIRMADA.value)
+        .where(or_(
+            MatriculaDetalle.estado_curso.is_(None),
+            MatriculaDetalle.estado_curso != EstadoCurso.RETIRADO.value,
+        ))
     )
     result = await db.execute(query)
     rows = result.all()

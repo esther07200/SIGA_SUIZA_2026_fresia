@@ -197,7 +197,9 @@ export function AcademicDashboard() {
       const pArea = getAreaByProgram(p.nombre).name;
       const matchesArea = filterArea === 'todas' || pArea === filterArea;
 
-      return matchesSearch && matchesEstado && matchesModalidad && matchesArea;
+      const matchesOrigen = p.origen !== 'seed';
+
+      return matchesSearch && matchesEstado && matchesModalidad && matchesArea && matchesOrigen;
     });
   }, [programs, searchTerm, filterEstado, filterModalidad, filterArea]);
 
@@ -636,7 +638,7 @@ export function AcademicDashboard() {
               </span>
             </div>
             <div className="text-3xl font-extrabold text-white tracking-tight">
-              {programs.length}
+              {programs.filter(p => p.origen !== 'seed').length}
             </div>
             <div className="text-xs font-semibold text-blue-200 mt-1">
               Carreras Profesionales

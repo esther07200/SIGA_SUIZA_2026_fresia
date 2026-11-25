@@ -9,7 +9,7 @@ import { EditStudentModal } from './EditStudentModal';
 import { StudentDetail } from './StudentDetail';
 import { ProtectedImage } from './ProtectedImage';
 import { DEPARTAMENTOS, getProvincias, getDistritos } from './ubigeoPeru';
-import { GraduationCap, Search, CloudDownload, Plus, Users, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, LayoutGrid, Info, X, Mail, Phone, MapPin, CheckCircle2, FileCheck2, UserPlus, Sparkles, Camera, Trash2, AlertTriangle, Eye, CreditCard } from 'lucide-react';
+import { GraduationCap, Search, CloudDownload, Plus, Users, Pencil, ChevronRight, ChevronLeft, ChevronDown, Check, LayoutGrid, Info, X, Mail, Phone, MapPin, CheckCircle2, FileCheck2, UserPlus, Sparkles, Camera, Trash2, AlertTriangle, Eye, CreditCard, CalendarDays } from 'lucide-react';
 
 // Puente entre sectores: Línea con puntitos unida a cada extremo con degradé dinámico según el estado
 const SectorBridge = ({ fromStepId, currentStep }) => {
@@ -545,6 +545,9 @@ export function StudentMaster() {
   const [wizardStep, setWizardStep] = useState(1);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [currentPrograma, setCurrentPrograma] = useState('ALL');
+  const [periodos, setPeriodos] = useState([]);
+  const [selectedPeriodo, setSelectedPeriodo] = useState('ALL');
+  const [periodosListos, setPeriodosListos] = useState(false);
   const [stepDir, setStepDir] = useState('forward');
   const [loadError, setLoadError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -609,6 +612,40 @@ export function StudentMaster() {
     return () => { active = false; };
   }, [canLoadProgramCatalog, toastError]);
 
+  useEffect(() => {
+    if (userRole === 'invitado') return;
+    let active = true;
+    fetch(`${API_BASE}/api/mod-programas-estudio/periodos`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    })
+      .then(async response => {
+        if (!response.ok) throw new Error(`No se pudo cargar los periodos academicos (HTTP ${response.status}).`);
+        return response.json();
+      })
+      .then(data => {
+        if (!active || !Array.isArray(data)) return;
+        const ordenados = [...data].sort((a, b) =>
+          String(b.fecha_inicio || '').localeCompare(String(a.fecha_inicio || ''))
+        );
+        setPeriodos(ordenados);
+        setSelectedPeriodo(prev => {
+          if (prev !== 'ALL') return prev;
+          const activo = ordenados.find(p =>
+            ['matricula_abierta', 'en_curso'].includes(String(p.estado || '').toLowerCase())
+          );
+          return String((activo || ordenados[0])?.id ?? 'ALL');
+        });
+      })
+      .catch(error => {
+        if (!active) return;
+        console.error('Error cargando periodos academicos:', error);
+      })
+      .finally(() => {
+        if (active) setPeriodosListos(true);
+      });
+    return () => { active = false; };
+  }, [userRole]);
+
   const generarCodigoLocalUnico = () => {
     const year = new Date().getFullYear();
     const prefix = `${year}-`;
@@ -663,11 +700,14 @@ export function StudentMaster() {
     setLoading(true);
     setLoadError(null);
     try {
-      let url = `${API_BASE}/api/mod-gestion-academica/estudiantes/`;
-
+      const params = [];
       if (currentPrograma && currentPrograma !== 'ALL') {
-        url += `?programa_id=${currentPrograma}`;
+        params.push(`programa_id=${encodeURIComponent(currentPrograma)}`);
       }
+      if (selectedPeriodo && selectedPeriodo !== 'ALL') {
+        params.push(`periodo_id=${encodeURIComponent(selectedPeriodo)}`);
+      }
+      const url = `${API_BASE}/api/mod-gestion-academica/estudiantes/${params.length ? `?${params.join('&')}` : ''}`;
 
       const res = await fetch(url, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
@@ -748,8 +788,10 @@ export function StudentMaster() {
       }
     }
 
+    if (!periodosListos) return;
+
     handleSearch(searchTerm);
-  }, [currentPrograma, userRole, user?.programa_id, programCatalog]);
+  }, [currentPrograma, selectedPeriodo, periodosListos, userRole, user?.programa_id, programCatalog]);
 
   const handleFotoChange = (e) => {
     const file = e.target.files?.[0];
@@ -1331,6 +1373,14 @@ export function StudentMaster() {
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15 border border-white/20 text-white text-xs font-semibold backdrop-blur-sm">
                   <Users size={13} /> {students.length} registrados
                 </span>
+                {selectedPeriodo !== 'ALL' && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15 border border-white/20 text-white text-xs font-semibold backdrop-blur-sm">
+                    <CalendarDays size={13} />
+                    Periodo: {periodos.find(p => String(p.id) === selectedPeriodo)?.nombre
+                      || periodos.find(p => String(p.id) === selectedPeriodo)?.codigo
+                      || 'seleccionado'}
+                  </span>
+                )}
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15 border border-white/20 text-white text-xs font-semibold backdrop-blur-sm">
                   <CheckCircle2 size={13} /> Maestro de Datos
                 </span>
@@ -1369,6 +1419,25 @@ export function StudentMaster() {
         {['superadmin', 'admin', 'secretaria_academica', 'admin_admision'].includes(userRole) && (
           <ProgramaFilter value={currentPrograma} onChange={setCurrentPrograma} programas={programCatalog} />
         )}
+        <div className="relative w-full md:w-auto">
+          <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-primary/70">
+            <CalendarDays size={16} />
+          </span>
+          <select
+            aria-label="Periodo academico"
+            className="h-[56px] w-full md:w-auto appearance-none rounded-xl border-2 border-slate-200 bg-white pl-9 pr-9 text-sm font-semibold text-slate-text shadow-md outline-none transition-all duration-200 focus:border-primary/60 focus:ring-4 focus:ring-primary/15 cursor-pointer"
+            value={selectedPeriodo}
+            onChange={(e) => setSelectedPeriodo(e.target.value)}
+          >
+            <option value="ALL">Todos los periodos</option>
+            {periodos.map(p => (
+              <option key={p.id} value={String(p.id)}>
+                {p.nombre || p.codigo}{p.fecha_inicio ? ` (${String(p.fecha_inicio).slice(0, 10)})` : ''}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={16} className="pointer-events-none absolute inset-y-0 right-0 my-auto mr-3 text-slate-400" />
+        </div>
         <div className="group flex-1 flex items-center gap-3 h-[56px] pl-3 pr-3 rounded-xl border-2 border-slate-200 bg-white shadow-md transition-all duration-200 focus-within:border-primary/60 focus-within:ring-4 focus-within:ring-primary/15 focus-within:shadow-lg focus-within:shadow-primary/10">
           <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary-dark text-white flex items-center justify-center flex-shrink-0 shadow-md shadow-primary/40 transition-transform duration-200 group-focus-within:scale-105">
             <Search size={18} />

@@ -61,14 +61,24 @@ class SIGAApiClient {
       }
 
       if (!response.ok) {
-        let errorMsg = `HTTP error! status: ${response.status}`;
+        let errorDetail = null;
         try {
           const errorData = await response.json();
-          errorMsg = errorData.detail || errorMsg;
+          const d = errorData?.detail;
+          if (typeof d === 'string' && d) {
+            errorDetail = d;
+          } else if (Array.isArray(d)) {
+            errorDetail = d.map((item) => item?.msg || JSON.stringify(item)).join('; ');
+          } else if (d !== undefined && d !== null) {
+            errorDetail = JSON.stringify(d);
+          }
         } catch {
           // ignore
         }
-        throw new Error(errorMsg);
+        const error = new Error(errorDetail || `HTTP error! status: ${response.status}`);
+        error.status = response.status;
+        if (errorDetail) error.detail = errorDetail;
+        throw error;
       }
 
       return await response.json();

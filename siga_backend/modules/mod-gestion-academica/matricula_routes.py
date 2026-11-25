@@ -38,6 +38,7 @@ from domain import (
     es_periodo_inicio_anio,
 )
 from enrollment_engine import construir_propuesta, evaluar_ventana_matricula
+from usuario_estudiante import asegurar_usuario_estudiante
 from enrollment_service import cargar_historial, construir_contexto
 from intermodule import fetch_cargaLectiva, fetch_malla, fetch_programa, fetch_periodo, fetch_programas
 from models import (
@@ -425,6 +426,7 @@ async def matricular_ingresantes(
 
     creadas, omitidas, sin_malla = [], [], []
     ctx_cache: Dict = {}
+    estudiantes_alta = []
     for est in estudiantes:
         if not est.programa_id:
             omitidas.append({"estudiante_id": est.id, "motivo": "Sin programa asignado"})
@@ -484,8 +486,13 @@ async def matricular_ingresantes(
             "ciclo": propuesta.ciclo_sugerido,
             "unidades": len(unidades),
         })
+        estudiantes_alta.append(est)
 
     await db.commit()
+
+    for est in estudiantes_alta:
+        await asegurar_usuario_estudiante(db, est)
+
     return {
         "matriculados": len(creadas),
         "detalle": creadas,

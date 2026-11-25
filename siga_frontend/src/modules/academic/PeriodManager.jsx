@@ -1,15 +1,19 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../../core/api/client';
 import { useToast } from '../../core/ui/ToastContext';
-import { X, Lightbulb, Calendar, Plus, Clock, ArrowRight, Trash2 } from 'lucide-react';
+import { X, Lightbulb, Calendar, Plus, Clock, ArrowRight, Trash2, Pencil, Check } from 'lucide-react';
 
 export function PeriodManager({ onClose, onUpdate }) {
   const toast = useToast();
   const [periods, setPeriods] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [editForm, setEditForm] = useState(null);
   const [newPeriod, setNewPeriod] = useState({
     codigo: '',
+    nombre: '',
     fecha_inicio: '',
     fecha_fin: '',
     fecha_fin_matricula_regular: '',
@@ -38,7 +42,7 @@ export function PeriodManager({ onClose, onUpdate }) {
     setIsSubmitting(true);
     try {
       await apiClient.callModule('mod-programas-estudio', 'periodos', 'POST', newPeriod);
-      setNewPeriod({ codigo: '', fecha_inicio: '', fecha_fin: '', fecha_fin_matricula_regular: '', fecha_fin_matricula_extemporanea: '', estado: 'planificacion' });
+      setNewPeriod({ codigo: '', nombre: '', fecha_inicio: '', fecha_fin: '', fecha_fin_matricula_regular: '', fecha_fin_matricula_extemporanea: '', estado: 'planificacion' });
       fetchPeriods();
       if (onUpdate) onUpdate();
       toast.success('Periodo académico creado exitosamente');
@@ -111,8 +115,48 @@ export function PeriodManager({ onClose, onUpdate }) {
       if (onUpdate) onUpdate();
       toast.success(`Periodo ${period.codigo} eliminado`);
     } catch (error) {
-      console.error('Error eliminando periodo:', error);
+      console.error('Error deleting period:', error);
       toast.error(error.message || 'No se pudo eliminar el periodo');
+    }
+  };
+
+  const startEdit = (period) => {
+    setEditingId(period.id);
+    setEditForm({
+      codigo: period.codigo || '',
+      nombre: period.nombre || '',
+      fecha_inicio: (period.fecha_inicio || '').slice(0, 10),
+      fecha_fin: (period.fecha_fin || '').slice(0, 10),
+      fecha_fin_matricula_regular: (period.fecha_fin_matricula_regular || '').slice(0, 10),
+      fecha_fin_matricula_extemporanea: (period.fecha_fin_matricula_extemporanea || '').slice(0, 10),
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditForm(null);
+  };
+
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+    setIsUpdating(true);
+    try {
+      const payload = Object.fromEntries(
+        Object.entries(editForm).map(([key, value]) => [
+          key,
+          typeof value === 'string' && value.trim() === '' ? null : value,
+        ])
+      );
+      await apiClient.callModule('mod-programas-estudio', `periodos/${editingId}`, 'PUT', payload);
+      fetchPeriods();
+      if (onUpdate) onUpdate();
+      cancelEdit();
+      toast.success('Periodo actualizado exitosamente');
+    } catch (error) {
+      console.error('Error updating period:', error);
+      toast.error(error.message || 'No se pudo actualizar el periodo');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -152,6 +196,17 @@ export function PeriodManager({ onClose, onUpdate }) {
                   onChange={e => setNewPeriod({...newPeriod, codigo: e.target.value})}
                   required 
                   placeholder="Ej. 2026-I"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">Nombre del Periodo</label>
+                <input 
+                  type="text" 
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" 
+                  value={newPeriod.nombre} 
+                  onChange={e => setNewPeriod({...newPeriod, nombre: e.target.value})}
+                  placeholder="Ej. Segundo Semestre 2026"
                 />
               </div>
 
@@ -258,7 +313,107 @@ export function PeriodManager({ onClose, onUpdate }) {
               </div>
             ) : (
               <div className="space-y-2.5">
-                {periods.map(period => (
+                {periods.map(period => editingId === period.id && editForm ? (
+                  <form
+                    key={`edit-${period.id}`}
+                    onSubmit={handleUpdate}
+                    className="p-3.5 rounded-xl border-2 border-primary/40 bg-primary/5 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-primary uppercase tracking-wider">Editar Periodo</span>
+                      <span className="text-[11px] font-mono text-slate-500">ID #{period.id}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wider mb-1">Código</label>
+                        <input
+                          type="text"
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 font-mono uppercase focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          value={editForm.codigo}
+                          onChange={e => setEditForm({ ...editForm, codigo: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wider mb-1">Nombre</label>
+                        <input
+                          type="text"
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          value={editForm.nombre}
+                          onChange={e => setEditForm({ ...editForm, nombre: e.target.value })}
+                          placeholder="Nombre visible"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wider mb-1">Fecha Inicio</label>
+                        <input
+                          type="date"
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          value={editForm.fecha_inicio}
+                          onChange={e => setEditForm({ ...editForm, fecha_inicio: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wider mb-1">Fecha Fin</label>
+                        <input
+                          type="date"
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          value={editForm.fecha_fin}
+                          onChange={e => setEditForm({ ...editForm, fecha_fin: e.target.value })}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wider mb-1">Cierre Mat. Regular</label>
+                        <input
+                          type="date"
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          value={editForm.fecha_fin_matricula_regular}
+                          onChange={e => setEditForm({ ...editForm, fecha_fin_matricula_regular: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wider mb-1">Cierre Mat. Extemporánea</label>
+                        <input
+                          type="date"
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          value={editForm.fecha_fin_matricula_extemporanea}
+                          onChange={e => setEditForm({ ...editForm, fecha_fin_matricula_extemporanea: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={cancelEdit}
+                        className="px-3 py-1.5 text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isUpdating}
+                        className="px-3 py-1.5 text-[11px] font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-60"
+                      >
+                        {isUpdating ? (
+                          <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                        ) : (
+                          <Check size={13} />
+                        )}
+                        Guardar Cambios
+                      </button>
+                    </div>
+                  </form>
+                ) : (
                   <div 
                     key={period.id} 
                     className="p-3.5 rounded-xl border border-slate-200/80 hover:border-slate-300 hover:shadow-sm transition-all bg-white"
@@ -269,9 +424,9 @@ export function PeriodManager({ onClose, onUpdate }) {
                           {period.codigo.split('-')[1] || period.codigo}
                         </div>
                         <div>
-                          <h4 className="font-bold text-sm text-slate-900 tracking-tight">{period.codigo}</h4>
+                          <h4 className="font-bold text-sm text-slate-900 tracking-tight">{period.nombre || period.codigo}</h4>
                           <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
-                            <Clock size={12} className="text-slate-400" />
+                            <Clock size={12} className="text-slate-400 flex-shrink-0" />
                             <span>
                               {period.fecha_inicio ? new Date(period.fecha_inicio).toLocaleDateString() : '-'}
                             </span>
@@ -279,6 +434,9 @@ export function PeriodManager({ onClose, onUpdate }) {
                             <span>
                               {period.fecha_fin ? new Date(period.fecha_fin).toLocaleDateString() : '-'}
                             </span>
+                            {period.nombre && (
+                              <span className="font-mono text-slate-400">({period.codigo})</span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -298,6 +456,15 @@ export function PeriodManager({ onClose, onUpdate }) {
                             <option value="en_curso">En Curso</option>
                             <option value="historico">Histórico</option>
                           </select>
+                          <button
+                            type="button"
+                            onClick={() => startEdit(period)}
+                            title={`Editar periodo ${period.codigo}`}
+                            aria-label={`Editar periodo ${period.codigo}`}
+                            className="text-slate-400 hover:text-primary hover:bg-primary/5 border border-slate-200 hover:border-primary/30 rounded-lg p-1 cursor-pointer transition-colors"
+                          >
+                            <Pencil size={13} />
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleDelete(period)}

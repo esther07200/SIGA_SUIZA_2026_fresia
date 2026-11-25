@@ -15,6 +15,7 @@ class ProgramaEstudio(BaseModel):
     plan_estudio_id = Column(Integer)
     modalidad = Column(String(50), default="presencial")
     estado = Column(String(20), default="activo")
+    origen = Column(String(20), default="manual", server_default="manual") # manual (creado por el usuario) | seed (catálogo institucional)
 
     # Relaciones
     configuraciones = relationship("ProgramaConfiguracion", back_populates="programa")
@@ -26,6 +27,7 @@ class PeriodoAcademico(BaseModel):
     __tablename__ = "periodos_academicos"
 
     codigo = Column(String(20), unique=True, nullable=False) # Ej: 2024-I
+    nombre = Column(String(120), nullable=True) # Nombre editable mostrado en la UI (ej: "Segundo Semestre 2026")
     fecha_inicio = Column(TIMESTAMP, nullable=False)
     fecha_fin = Column(TIMESTAMP, nullable=False)
     estado = Column(String(20), default="planificacion") # planificacion, matricula_abierta, en_curso, cerrado
@@ -98,7 +100,7 @@ class CargaLectiva(BaseModel):
     seccion = Column(String(10)) # A, B, C
     estado = Column(String(30), default="borrador") # borrador, revision, publicado
     fecha_limite_notas = Column(Date, nullable=True)
-    acta_cerrada = Column(Boolean, default=False, nullable=False)
+    acta_cerrada = Column(Boolean, default=False, nullable=False, server_default="false")
     acta_cerrada_at = Column(TIMESTAMP, nullable=True)
     acta_cerrada_por = Column(Integer, nullable=True)
 

@@ -33,6 +33,7 @@ class ProgramaResponse(ProgramaBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    origen: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 # Schemas Periodo Academico
@@ -43,15 +44,25 @@ class PeriodoBase(BaseModel):
     estado: str = "planificacion"
     fecha_fin_matricula_regular: Optional[datetime] = None
     fecha_fin_matricula_extemporanea: Optional[datetime] = None
+    nombre: Optional[str] = None
 
 class PeriodoCreate(PeriodoBase):
     pass
+
+class PeriodoUpdate(BaseModel):
+    """Actualización parcial de un periodo académico (solo campos enviados)."""
+    codigo: Optional[str] = None
+    nombre: Optional[str] = None
+    fecha_inicio: Optional[datetime] = None
+    fecha_fin: Optional[datetime] = None
+    estado: Optional[str] = None
+    fecha_fin_matricula_regular: Optional[datetime] = None
+    fecha_fin_matricula_extemporanea: Optional[datetime] = None
 
 class PeriodoResponse(PeriodoBase):
     id: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    nombre: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
     @model_validator(mode="after")
@@ -213,6 +224,71 @@ async def actualizar_estado_periodo(periodo_id: int, estado: str, request: Reque
     await db.commit()
     await db.refresh(db_periodo)
     return db_periodo
+
+
+@router.put("/periodos/{periodo_id}", response_model=PeriodoResponse)
+async def actualizar_periodo(periodo_id: int, periodo: PeriodoUpdate, request: Request, db: AsyncSession = Depends(get_db)):
+    """Edita los datos de un periodo académico (código, nombre, fechas y/o estado)."""
+    result = await db.execute(select(PeriodoAcademico).where(PeriodoAcademico.id == periodo_id))
+    db_periodo = result.scalar_one_or_none()
+    if not db_periodo:
+        raise HTTPException(status_code=404, detail="Periodo no encontrado")
+
+    data = periodo.model_dump(exclude_unset=True)
+    for key in ['fecha_inicio', 'fecha_fin', 'fecha_fin_matricula_regular', 'fecha_fin_matricula_extemporanea']:
+        if key in data and data[key] is not None and getattr(data[key], 'tzinfo', None):
+            data[key] = data[key].replace(tzinfo=None)
+
+    if 'codigo' in data:
+        codigo_norm = (data['codigo'] or '').strip().upper()
+        if not codigo_norm:
+            raise HTTPException(status_code=400, detail="El código del periodo no puede estar vacío.")
+        duplicado = (await db.execute(
+            select(PeriodoAcademico).where(
+                func.upper(func.trim(PeriodoAcademico.codigo)) == codigo_norm,
+                PeriodoAcademico.id != periodo_id,
+            )
+        )).scalars().first()
+        if duplicado:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ya existe un periodo académico con el código '{codigo_norm}'."
+            )
+        data['codigo'] = codigo_norm
+
+    if 'nombre' in data:
+        nombre = (data['nombre'] or '').strip()
+        data['nombre'] = nombre or None
+
+    if 'fecha_inicio' in data and 'fecha_fin' in data:
+        inicio, fin = data['fecha_inicio'], data['fecha_fin']
+    else:
+        inicio = data.get('fecha_inicio', db_periodo.fecha_inicio)
+        fin = data.get('fecha_fin', db_periodo.fecha_fin)
+    if inicio and fin and fin < inicio:
+        raise HTTPException(status_code=400, detail="La fecha de fin no puede ser anterior a la fecha de inicio.")
+
+    if not data:
+        raise HTTPException(status_code=400, detail="No se recibieron campos para actualizar.")
+
+    for key, value in data.items():
+        setattr(db_periodo, key, value)
+
+    event = OutboxEvent(
+        event_type="periodo.actualizado",
+        payload={
+            "id": db_periodo.id,
+            "codigo": db_periodo.codigo,
+            "nombre": db_periodo.nombre,
+            "campos": sorted(data.keys()),
+            "metadata": {"request_id": request.headers.get("X-Request-ID", "unknown")},
+        },
+    )
+    db.add(event)
+    await db.commit()
+    await db.refresh(db_periodo)
+    return db_periodo
+
 
 @router.get("/programas", response_model=List[ProgramaResponse])
 async def obtener_programas(db: AsyncSession = Depends(get_db)):
