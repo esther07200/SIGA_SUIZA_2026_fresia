@@ -4,6 +4,11 @@ import { QRCodeSVG } from 'qrcode.react';
 import { getDefaultPeriod, getPeriodLabel, isHistoricalPeriod, isFirstPeriodOfYear } from './periodUtils';
 import { useToast } from '../../core/ui/ToastContext';
 
+const resolverProgramaEstudiante = (student, programs) => {
+  if (!student?.programa_id || !Array.isArray(programs)) return null;
+  return programs.find(p => String(p.id) === String(student.programa_id)) || null;
+};
+
 export function EnrollmentProcess({ initialStudent, onCancel }) {
   const toast = useToast();
   const [step, setStep] = useState(initialStudent ? 2 : 1);
@@ -30,6 +35,8 @@ export function EnrollmentProcess({ initialStudent, onCancel }) {
   const [consolidando, setConsolidando] = useState(false);
 
   const [cachedStudents, setCachedStudents] = useState([]);
+  const [programCatalog, setProgramCatalog] = useState([]);
+  const [programError, setProgramError] = useState('');
 
   // 1. Buscar Estudiante Maestro Optimizado (Caché en cliente para búsqueda instantánea)
   const searchStudent = async (val) => {
@@ -63,43 +70,52 @@ export function EnrollmentProcess({ initialStudent, onCancel }) {
   useEffect(() => {
     const fetchAcademic = async () => {
       try {
-      const [pRes, peRes] = await Promise.all([
-        apiClient.request('/api/mod-programas-estudio/programas').catch(()=>[]),
-        apiClient.callModule('mod-programas-estudio', 'periodos').catch(()=>[])
-      ]);
-      const fetchedPrograms = Array.isArray(pRes) ? pRes : [];
-      const fetchedPeriods = Array.isArray(peRes) ? peRes : [];
-      
-      console.log("Academic Data Loaded:", {fetchedPrograms, fetchedPeriods, initialStudent});
-      
-      const activePeriod = getDefaultPeriod(fetchedPeriods);
-      const isStartOfYear = isFirstPeriodOfYear(activePeriod);
-      const defaultTipo = isStartOfYear ? 'Ordinario' : 'Regular';
+        const [pRes, peRes] = await Promise.all([
+          apiClient.request('/api/mod-programas-estudio/programas').catch(()=>[]),
+          apiClient.callModule('mod-programas-estudio', 'periodos').catch(()=>[])
+        ]);
+        const fetchedPrograms = Array.isArray(pRes) ? pRes : [];
+        const fetchedPeriods = Array.isArray(peRes) ? peRes : [];
+        setProgramCatalog(fetchedPrograms);
 
-      // Auto-select based on student and active period (usar mismos periodos que Periodos Lectivos)
-      if (initialStudent) {
-        const studentProgram = fetchedPrograms.find(p => p.id === initialStudent.programa_id || String(p.id) === String(initialStudent.programa_id));
-        setSelection(prev => ({
-          ...prev,
-          program: studentProgram || fetchedPrograms[0] || null,
-          period: activePeriod,
-          tipo: defaultTipo
-        }));
-      } else if (activePeriod) {
-        setSelection(prev => ({
-          ...prev,
-          period: prev.period || activePeriod,
-          tipo: !isStartOfYear && prev.tipo === 'Ordinario' ? 'Regular' : (prev.tipo || defaultTipo)
-        }));
-      }
-      } catch (e) { 
-        console.error('Error fetching academic data:', e); 
+        const activePeriod = getDefaultPeriod(fetchedPeriods);
+        const isStartOfYear = isFirstPeriodOfYear(activePeriod);
+        const defaultTipo = isStartOfYear ? 'Ordinario' : 'Regular';
+
+        if (initialStudent) {
+          const studentProgram = resolverProgramaEstudiante(initialStudent, fetchedPrograms);
+          setProgramError(studentProgram ? '' : 'El estudiante no tiene un programa de estudio válido. Actualice su programa antes de matricularlo.');
+          setSelection(prev => ({
+            ...prev,
+            program: studentProgram,
+            period: activePeriod,
+            tipo: defaultTipo
+          }));
+        } else if (activePeriod) {
+          setSelection(prev => ({
+            ...prev,
+            period: prev.period || activePeriod,
+            tipo: !isStartOfYear && prev.tipo === 'Ordinario' ? 'Regular' : (prev.tipo || defaultTipo)
+          }));
+        }
+      } catch (e) {
+        console.error('Error fetching academic data:', e);
+        setProgramError('No se pudo cargar el catálogo de programas de estudio.');
       }
     };
     fetchAcademic();
   }, [initialStudent]);
 
   const loadMallaAndContinue = async () => {
+    if (!selection.student?.programa_id) {
+      toast.error('El estudiante no tiene un programa de estudio asignado. Actualice su programa antes de continuar.');
+      return;
+    }
+    if (!selection.program || String(selection.program.id) !== String(selection.student.programa_id)) {
+      toast.error('El programa seleccionado no coincide con el programa del estudiante. Actualice su programa antes de continuar.');
+      return;
+    }
+
     // 0. Validar Pago Financiero
     if (selection.student && !selection.student.pago_matricula) {
       toast.error("MATRÍCULA BLOQUEADA: El estudiante registra deuda pendiente. Debe realizar el pago físico en Caja/Tesorería antes de proceder.");
@@ -328,7 +344,12 @@ export function EnrollmentProcess({ initialStudent, onCancel }) {
                   <button 
                     key={s.id} 
                     className="w-full text-left p-4 rounded-xl bg-white border border-slate-100 hover:border-primary/30 hover:shadow-md transition-all flex justify-between items-center group"
-                    onClick={() => { setSelection({...selection, student: s}); setStep(2); }}
+                    onClick={() => {
+                      const studentProgram = resolverProgramaEstudiante(s, programCatalog);
+                      setProgramError(studentProgram ? '' : 'El estudiante no tiene un programa de estudio válido. Actualice su programa antes de matricularlo.');
+                      setSelection({...selection, student: s, program: studentProgram});
+                      setStep(2);
+                    }}
                   >
                     <div className="flex items-center">
                       <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold mr-4 group-hover:scale-110 transition-transform">
@@ -357,7 +378,7 @@ export function EnrollmentProcess({ initialStudent, onCancel }) {
                 2. Selección de Programa y Periodo
               </h5>
               
-              {selection.student && (
+               {selection.student && (
                 <div className="mb-8 p-4 bg-primary/5 rounded-xl border border-primary/10 flex items-center">
                   <div className="w-12 h-12 rounded-full bg-white text-primary flex items-center justify-center font-bold text-lg shadow-sm mr-4">
                     {selection.student.nombres[0]}{selection.student.apellidos[0]}
@@ -369,11 +390,18 @@ export function EnrollmentProcess({ initialStudent, onCancel }) {
                 </div>
               )}
 
+              {programError && (
+                <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                  {programError}
+                </div>
+              )}
+
               {/* Contexto Operativo y Casuística */}
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
                 <div className="glass-card p-4 border-l-4 border-l-primary bg-gradient-to-r from-white to-slate-50 flex flex-col justify-center">
                   <p className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider">Programa de Estudios</p>
-                  <p className="font-bold text-slate-800">{selection.program ? selection.program.nombre : 'Buscando...'}</p>
+                  <p className="font-bold text-slate-800">{selection.program ? selection.program.nombre : 'Sin programa asignado'}</p>
                 </div>
                 
                 <div className="glass-card p-4 border-l-4 border-l-blue-500 bg-gradient-to-r from-white to-slate-50 flex flex-col justify-center">

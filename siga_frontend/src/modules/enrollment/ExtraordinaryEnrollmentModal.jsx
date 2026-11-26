@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiClient, API_BASE } from '../../core/api/client';
 
 export default function ExtraordinaryEnrollmentModal({ isOpen, onClose, onSuccess, currentPrograma, userRole }) {
@@ -7,10 +7,32 @@ export default function ExtraordinaryEnrollmentModal({ isOpen, onClose, onSucces
     nombres: '',
     apellidos: '',
     codigo_estudiante: '',
-    programa_id: currentPrograma === 'ALL' ? '1' : currentPrograma
+    programa_id: currentPrograma && currentPrograma !== 'ALL' ? String(currentPrograma) : ''
   });
+  const [programas, setProgramas] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!isOpen || !['superadmin', 'admin'].includes(userRole)) return undefined;
+    let cancelled = false;
+    apiClient.request('/api/mod-programas-estudio/programas')
+      .then(data => {
+        if (cancelled) return;
+        const list = Array.isArray(data) ? data : [];
+        setProgramas(list);
+        setFormData(prev => ({
+          ...prev,
+          programa_id: currentPrograma && currentPrograma !== 'ALL' && list.some(p => String(p.id) === String(currentPrograma))
+            ? String(currentPrograma)
+            : ''
+        }));
+      })
+      .catch(() => {
+        if (!cancelled) setProgramas([]);
+      });
+    return () => { cancelled = true; };
+  }, [isOpen, currentPrograma, userRole]);
 
   if (!isOpen) return null;
 
@@ -23,7 +45,7 @@ export default function ExtraordinaryEnrollmentModal({ isOpen, onClose, onSucces
       // 1. Create the student
       const studentPayload = {
         ...formData,
-        programa_id: parseInt(formData.programa_id),
+        programa_id: formData.programa_id ? parseInt(formData.programa_id, 10) : null,
         modalidad_admision: 'MIGRACION_HISTORICA',
         estado_academico: 'estudiante'
       };
@@ -151,16 +173,10 @@ export default function ExtraordinaryEnrollmentModal({ isOpen, onClose, onSucces
                 value={formData.programa_id}
                 onChange={e => setFormData({...formData, programa_id: e.target.value})}
               >
-                <option value="1">Desarrollo de Sistemas de Información</option>
-                <option value="2">Enfermería Técnica</option>
-                <option value="4">Gestión / Asistencia Administrativa</option>
-                <option value="5">Contabilidad</option>
-                <option value="6">Mecatrónica Automotriz</option>
-                <option value="7">Electricidad Industrial</option>
-                <option value="8">Administración de Operaciones Turísticas</option>
-                <option value="9">Construcción Civil</option>
-                <option value="10">Producción Agropecuaria</option>
-                <option value="11">Manejo Forestal</option>
+                <option value="" disabled>Seleccione un programa</option>
+                {programas.map(p => (
+                  <option key={p.id} value={String(p.id)}>{p.nombre}</option>
+                ))}
               </select>
             </div>
           )}

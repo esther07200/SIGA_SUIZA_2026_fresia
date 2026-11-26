@@ -842,6 +842,14 @@ async def eliminar_estudiante(estudiante_id: int, request: Request, db: AsyncSes
 
 @router.post("/matriculas/", response_model=MatriculaResponse, status_code=status.HTTP_201_CREATED)
 async def realizar_matricula(request: Request, data: MatriculaCreate, db: AsyncSession = Depends(get_db)):
+    estudiante = (
+        await db.execute(select(Estudiante).where(Estudiante.id == data.estudiante_id))
+    ).scalar_one_or_none()
+    if not estudiante:
+        raise HTTPException(status_code=404, detail="Estudiante no encontrado")
+    if estudiante.programa_id is None:
+        raise HTTPException(status_code=400, detail="El estudiante no tiene un programa de estudio asignado")
+
     # Validar si ya está matriculado en este periodo
     from sqlalchemy.future import select
     existing = await db.execute(
@@ -861,6 +869,7 @@ async def realizar_matricula(request: Request, data: MatriculaCreate, db: AsyncS
 
     # Separar detalles
     matricula_data = data.model_dump(exclude={"detalles"})
+    matricula_data["programa_id"] = estudiante.programa_id
     matricula_data["estado_matricula"] = EstadoMatricula.CONFIRMADA.value
     db_matricula = Matricula(**matricula_data)
     db.add(db_matricula)

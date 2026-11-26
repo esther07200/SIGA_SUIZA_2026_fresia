@@ -86,6 +86,17 @@ async def _obtener_matricula(db: AsyncSession, matricula_id: int) -> Matricula:
     return matricula
 
 
+async def _programa_id_del_estudiante(db: AsyncSession, estudiante_id: int) -> int:
+    estudiante = (
+        await db.execute(select(Estudiante).where(Estudiante.id == estudiante_id))
+    ).scalar_one_or_none()
+    if not estudiante:
+        raise HTTPException(status_code=404, detail="Estudiante no encontrado")
+    if estudiante.programa_id is None:
+        raise HTTPException(status_code=400, detail="El estudiante no tiene un programa de estudio asignado")
+    return estudiante.programa_id
+
+
 async def _creditos_por_unidad(malla) -> dict:
     """``{unidad_id: creditos}`` a partir de la malla del programa."""
     mapa = {}
@@ -559,6 +570,7 @@ async def propuesta_matricula(
     ``estrategia`` permite forzar ``flexible`` o ``strict``; por defecto usa la
     configuración del entorno (``ENROLLMENT_ENGINE``).
     """
+    programa_id = await _programa_id_del_estudiante(db, estudiante_id)
     ctx = await construir_contexto(
         db, estudiante_id, programa_id, periodo_id,
         estrategia=estrategia, casuistica=casuistica,
@@ -595,6 +607,7 @@ async def restricciones_matricula(
     Reutiliza el motor: créditos máximos del plan, límite de unidades
     reprobadas, prerrequisitos no aprobados y el tope de intentos ("tercera vez").
     """
+    programa_id = await _programa_id_del_estudiante(db, estudiante_id)
     ctx = await construir_contexto(
         db, estudiante_id, programa_id, periodo_id,
         estrategia=estrategia, casuistica=casuistica,
