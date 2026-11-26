@@ -127,6 +127,14 @@ def es_superadmin(i: Identity) -> bool:
     return i.is_superuser or "superadmin" in i.roles
 
 
+ROLES_CON_ALCANCE_PROGRAMA = {"secretaria_programa", "docente", "coordinador_programa"}
+
+
+def tiene_alcance_por_programa(i: Identity) -> bool:
+    """Indica si la identidad debe operar únicamente dentro de su programa asignado."""
+    return not es_superadmin(i) and bool(ROLES_CON_ALCANCE_PROGRAMA.intersection(i.roles))
+
+
 def es_coordinador_de(i: Identity, programa_id: int) -> bool:
     """
     Verifica si el usuario es coordinador del programa académico indicado.

@@ -89,6 +89,7 @@ class AuthService:
                 "role": primary_role,
                 "roles": role_list,
                 "permissions": permissions,
+                "is_superuser": user.is_superuser,
                 "programa_id": programa_id
             }
         }

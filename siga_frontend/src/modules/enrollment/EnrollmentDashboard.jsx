@@ -30,6 +30,8 @@ export function EnrollmentDashboard() {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [programCatalog, setProgramCatalog] = useState([]);
+  const [filterPago, setFilterPago] = useState('todos');
+  const [loadError, setLoadError] = useState(null);
 
   // Para secretaria_programa y docente, el programa se bloquea al del usuario.
   // Para superadmin/admin se usa el selector dinámico.
@@ -50,19 +52,47 @@ export function EnrollmentDashboard() {
   }, [userRole]);
 
   const fetchStudents = async (searchVal = searchTerm) => {
+    if (isProgramScoped && !user?.programa_id) {
+      setStudents([]);
+      setLoadError('Su usuario no tiene un programa de estudio asignado. Solicite la asignación al administrador.');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
+    setLoadError(null);
     try {
       let url = `${API_BASE}/api/mod-gestion-academica/estudiantes/`;
-      if (currentPrograma && currentPrograma !== 'ALL') {
-        url += `?programa_id=${currentPrograma}`;
+      const programaParam = isProgramScoped
+        ? String(user.programa_id)
+        : (currentPrograma && currentPrograma !== 'ALL' ? String(currentPrograma) : '');
+      if (programaParam) {
+        url += `?programa_id=${encodeURIComponent(programaParam)}`;
       }
       
       const response = await fetch(url, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
+      if (response.headers.get('X-Fallback') === 'true') {
+        const detalle = response.headers.get('X-Fallback-Message')
+          || 'El servicio de estudiantes respondió con datos degradados.';
+        throw new Error(detalle);
+      }
+      if (!response.ok) {
+        let detalle = `El servicio de estudiantes respondió ${response.status}.`;
+        try {
+          const cuerpo = await response.json();
+          detalle = cuerpo.detail || cuerpo.message || detalle;
+        } catch { /* cuerpo no-JSON */ }
+        throw new Error(detalle);
+      }
       const data = await response.json();
       
       let finalData = Array.isArray(data) ? data : [];
+      if (filterPago === 'pagados') {
+        finalData = finalData.filter(s => Boolean(s.pago_matricula));
+      } else if (filterPago === 'pendientes') {
+        finalData = finalData.filter(s => !s.pago_matricula);
+      }
       if (searchVal.length >= 3) {
         finalData = finalData.filter(s => 
           (s.dni && s.dni.includes(searchVal)) || 
@@ -74,6 +104,8 @@ export function EnrollmentDashboard() {
       setStudents(finalData);
     } catch (error) {
       console.error('Error fetching students:', error);
+      setStudents([]);
+      setLoadError(error?.message || 'No se pudo cargar la lista de estudiantes.');
     } finally {
       setLoading(false);
     }
@@ -82,19 +114,22 @@ export function EnrollmentDashboard() {
   useEffect(() => {
     if (userRole === 'invitado') return;
 
-    // Para roles acotados al programa, aseguramos que currentPrograma refleje su programa_id
-    if (isProgramScoped && user?.programa_id) {
+    if (isProgramScoped) {
+      if (!user?.programa_id) {
+        fetchStudents();
+        return;
+      }
       const pid = String(user.programa_id);
       if (currentPrograma !== pid) {
         setCurrentPrograma(pid);
-        return; // El cambio de currentPrograma disparará el efecto de nuevo
+        return;
       }
     }
 
     fetchStudents();
     // Solo debe re-ejecutarse al cambiar de programa o rol.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPrograma, userRole, user?.programa_id]);
+  }, [currentPrograma, filterPago, userRole, user?.programa_id, user?.is_superuser, isProgramScoped]);
 
   const handleEnrollClick = (student) => {
     setSelectedStudent(student);
@@ -232,7 +267,13 @@ export function EnrollmentDashboard() {
         chips={['Consulta', 'Búsqueda', 'Matrícula']}
       />
 
-      <div className="glass-card p-2 mb-8 flex items-center max-w-3xl gap-2">
+      {loadError && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          {loadError}
+        </div>
+      )}
+
+      <div className="glass-card p-2 mb-8 flex items-center max-w-5xl gap-2">
         {['superadmin', 'admin'].includes(userRole) && (
           <select 
             className="input-field py-3 text-sm bg-slate-50 border-none w-48 font-bold text-primary"
@@ -248,11 +289,24 @@ export function EnrollmentDashboard() {
           </select>
         )}
         {isProgramScoped && user?.programa_id && (
-          <span className="px-3 py-1 text-sm font-semibold text-primary bg-primary/10 rounded-lg">
+          <span className="px-3 py-1 text-sm font-semibold text-primary bg-primary/10 rounded-lg shrink-0">
             {programCatalog.find(p => String(p.id) === String(user.programa_id))?.nombre || `Programa ${user.programa_id}`}
           </span>
         )}
-        <span className="px-4 text-slate-400 text-xl">🔍</span>
+        <select
+          className="input-field py-2.5 text-sm bg-slate-50 border-none font-semibold text-slate-700 shrink-0"
+          value={filterPago}
+          onChange={(e) => {
+            setFilterPago(e.target.value);
+            fetchStudents(searchTerm);
+          }}
+          aria-label="Filtrar por pago de matrícula"
+        >
+          <option value="todos">Todos (incluye pagados)</option>
+          <option value="pagados">Matrícula pagada</option>
+          <option value="pendientes">Pendiente de pago</option>
+        </select>
+        <span className="px-4 text-slate-400 text-xl shrink-0">🔍</span>
         <input 
           type="text" 
           className="w-full bg-transparent border-none focus:ring-0 py-3 text-slate-700 placeholder-slate-400 outline-none"
@@ -271,25 +325,26 @@ export function EnrollmentDashboard() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-200">
-                <th className="py-4 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[12%]">Código</th>
-                <th className="py-4 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[35%]">Estudiante</th>
-                <th className="py-4 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[13%]">DNI</th>
-                <th className="py-4 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[15%] max-w-[150px]">Email</th>
+                <th className="py-4 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[10%]">Código</th>
+                <th className="py-4 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[26%]">Estudiante</th>
+                <th className="py-4 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[11%]">DNI</th>
+                <th className="py-4 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[16%] max-w-[150px]">Email</th>
                 <th className="py-4 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[10%]">Estado</th>
+                <th className="py-4 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[12%]">Matrícula</th>
                 <th className="py-4 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-right w-[15%]">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="py-12 text-center">
+                  <td colSpan="7" className="py-12 text-center">
                     <div className="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-2"></div>
                     <p className="text-slate-500 font-medium">Cargando estudiantes...</p>
                   </td>
                 </tr>
               ) : students.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="py-12 text-center">
+                  <td colSpan="7" className="py-12 text-center">
                     <div className="text-4xl mb-3 opacity-50">🎓</div>
                     <p className="text-slate-500 font-medium">No hay estudiantes registrados.</p>
                   </td>
@@ -304,6 +359,15 @@ export function EnrollmentDashboard() {
                     <td className="py-3 px-4">
                       <span className="inline-block px-2 py-1 bg-green-100 text-green-700 text-[10px] font-bold uppercase rounded border border-green-200">
                         {student.estado_academico}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className={`inline-flex items-center px-2 py-1 text-[10px] font-bold uppercase rounded border ${
+                        student.pago_matricula
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-amber-50 text-amber-700 border-amber-200'
+                      }`}>
+                        {student.pago_matricula ? 'Pagada' : 'Pendiente'}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-right">

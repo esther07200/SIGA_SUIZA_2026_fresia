@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '../../core/api/client';
 import { useToast } from '../../core/ui/ToastContext';
 import { useConfirm } from '../../core/ui/ConfirmModal';
-import { Plus, Pencil, X, UserX, Users, ShieldCheck } from 'lucide-react';
+import { Plus, Pencil, X, UserX, Users, ShieldCheck, GraduationCap } from 'lucide-react';
 
 export function UserManagement() {
   const toast = useToast();
   const confirm = useConfirm();
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
+  const [programs, setPrograms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({
@@ -17,19 +18,22 @@ export function UserManagement() {
     password: '',
     is_active: true,
     is_superuser: false,
-    role_ids: []
+    role_ids: [],
+    programa_estudio_id: ''
   });
   const [editingId, setEditingId] = useState(null);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [usersRes, rolesRes] = await Promise.all([
+      const [usersRes, rolesRes, programsRes] = await Promise.all([
         apiClient.request('/api/mod-usuarios/usuarios'),
-        apiClient.request('/api/mod-usuarios/roles')
+        apiClient.request('/api/mod-usuarios/roles'),
+        apiClient.request('/api/mod-programas-estudio/programas').catch(() => [])
       ]);
       setUsers(usersRes);
       setRoles(rolesRes);
+      setPrograms(Array.isArray(programsRes) ? programsRes : []);
     } catch (error) {
       console.error('Error loading users/roles:', error);
     } finally {
@@ -58,8 +62,11 @@ export function UserManagement() {
     });
   };
 
+  const rolCoordinador = roles.find(r => String(r.name).toLowerCase() === 'coordinador_programa');
+  const esCoordinador = Boolean(rolCoordinador && formData.role_ids.includes(rolCoordinador.id));
+
   const openNewUserModal = () => {
-    setFormData({ email: '', full_name: '', password: '', is_active: true, is_superuser: false, role_ids: [] });
+    setFormData({ email: '', full_name: '', password: '', is_active: true, is_superuser: false, role_ids: [], programa_estudio_id: '' });
     setEditingId(null);
     setShowModal(true);
   };
@@ -71,6 +78,7 @@ export function UserManagement() {
       is_active: user.is_active,
       is_superuser: user.is_superuser,
       role_ids: user.roles.map(r => r.id),
+      programa_estudio_id: user.programa_estudio_id ? String(user.programa_estudio_id) : '',
       password: '' // empty so it won't be updated unless provided (not implemented for update yet)
     });
     setEditingId(user.id);
@@ -79,13 +87,22 @@ export function UserManagement() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (esCoordinador && !formData.programa_estudio_id) {
+      toast.error('Selecciona el programa de estudio que coordinará el usuario.');
+      return;
+    }
+    const payload = { ...formData };
+    if (esCoordinador) {
+      payload.programa_estudio_id = parseInt(payload.programa_estudio_id, 10);
+    } else {
+      delete payload.programa_estudio_id;
+    }
     try {
       if (editingId) {
-        const updateData = { ...formData };
-        delete updateData.password; // backend update doesn't handle password directly yet
-        await apiClient.request(`/api/mod-usuarios/usuarios/${editingId}`, { method: 'PUT', body: JSON.stringify(updateData) });
+        delete payload.password; // backend update doesn't handle password directly yet
+        await apiClient.request(`/api/mod-usuarios/usuarios/${editingId}`, { method: 'PUT', body: JSON.stringify(payload) });
       } else {
-        await apiClient.request('/api/mod-usuarios/usuarios', { method: 'POST', body: JSON.stringify(formData) });
+        await apiClient.request('/api/mod-usuarios/usuarios', { method: 'POST', body: JSON.stringify(payload) });
       }
       setShowModal(false);
       loadData();
@@ -322,6 +339,28 @@ export function UserManagement() {
                       </label>
                     ))}
                   </div>
+                  {esCoordinador && (
+                    <div className="mt-4 animate-fade-in">
+                      <label className="label text-slate-700 mb-2 flex items-center">
+                        <GraduationCap className="w-4 h-4 mr-2 text-primary" /> Programa que coordina *
+                      </label>
+                      <select
+                        name="programa_estudio_id"
+                        className="input-field w-full"
+                        value={formData.programa_estudio_id}
+                        onChange={handleInputChange}
+                        required
+                      >
+                        <option value="">-- Seleccionar Carrera --</option>
+                        {programs.map(program => (
+                          <option key={program.id} value={program.id}>{program.nombre}</option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-primary mt-1 font-medium">
+                        El coordinador solo podrá gestionar la carga académica de este programa.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex justify-end space-x-3 pt-6 border-t border-slate-100 mt-6">

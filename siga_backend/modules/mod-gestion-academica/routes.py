@@ -12,7 +12,7 @@ from pathlib import Path
 import uuid
 import unicodedata
 import re
-from shared.identity import get_identity, es_superadmin
+from shared.identity import get_identity, tiene_alcance_por_programa
 from intermodule import fetch_programas
 from domain import EstadoMatricula, EstadoCurso
 from usuario_estudiante import asegurar_usuario_estudiante
@@ -262,9 +262,7 @@ async def ingesta_admitidos(request: Request, data: IngestaMasivaRequest, db: As
 @router.post("/estudiantes/", response_model=EstudianteResponse, status_code=status.HTTP_201_CREATED)
 async def crear_estudiante(request: Request, data: EstudianteCreate, db: AsyncSession = Depends(get_db)):
     identity = await get_identity(request, db)
-    if not es_superadmin(identity) and set(identity.roles).intersection(
-        {"secretaria_programa", "docente", "coordinador_programa"}
-    ):
+    if tiene_alcance_por_programa(identity):
         if identity.programa_id is None:
             raise HTTPException(
                 status_code=403,
@@ -314,9 +312,7 @@ async def obtener_estudiantes(
     import traceback
     try:
         identity = await get_identity(request, db)
-        if not es_superadmin(identity) and set(identity.roles).intersection(
-            {"secretaria_programa", "docente", "coordinador_programa"}
-        ):
+        if tiene_alcance_por_programa(identity):
             if identity.programa_id is None:
                 raise HTTPException(
                     status_code=403,

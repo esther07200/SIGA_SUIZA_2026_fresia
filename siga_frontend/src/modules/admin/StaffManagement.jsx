@@ -118,7 +118,7 @@ export function StaffManagement() {
   };
 
   const isContracted = ['CONTRATADO_DRE', 'CONTRATADO_INSTITUCIONAL'].includes(formData.condicion_laboral);
-  const requiresProgram = ['SECRETARIA_PROGRAMA', 'DOCENTE_AULA', 'ASISTENTE_LABORATORIO', 'JEFE_AREA'].includes(formData.cargo_funcional);
+  const requiresProgram = ['SECRETARIA_PROGRAMA', 'COORDINADOR_PROGRAMA', 'DOCENTE_AULA', 'ASISTENTE_LABORATORIO', 'JEFE_AREA'].includes(formData.cargo_funcional);
 
   return (
     <div className="space-y-6">
@@ -311,6 +311,7 @@ export function StaffManagement() {
                         <option value="ASISTENTE_LABORATORIO">Asistente de Laboratorio</option>
                         <option value="JEFE_AREA">Jefe de Área Académica</option>
                         <option value="SECRETARIA_PROGRAMA">Secretaría de Programa</option>
+                        <option value="COORDINADOR_PROGRAMA">Coordinador de Programa</option>
                       </select>
                     </div>
 

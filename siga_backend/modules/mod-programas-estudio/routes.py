@@ -78,7 +78,7 @@ async def health_check():
 
 # Endpoints CRUD
 @router.post("/programas", response_model=ProgramaResponse, status_code=status.HTTP_201_CREATED)
-async def crear_programa(programa: ProgramaCreate, request: Request, db: AsyncSession = Depends(get_db)):
+async def crear_programa(programa: ProgramaCreate, request: Request, upsert: bool = False, db: AsyncSession = Depends(get_db)):
     import unicodedata
     def normalize_str(s: str) -> str:
         if not s:
@@ -89,15 +89,34 @@ async def crear_programa(programa: ProgramaCreate, request: Request, db: AsyncSe
     nombre_norm = normalize_str(programa.nombre)
 
     all_existentes = (await db.execute(select(ProgramaEstudio))).scalars().all()
-    for p in all_existentes:
-        if p.codigo and p.codigo.strip().upper() == codigo_norm:
-            raise HTTPException(status_code=400, detail=f"Ya existe un programa de estudio con el código '{programa.codigo}'")
-        if normalize_str(p.nombre) == nombre_norm:
-            raise HTTPException(status_code=400, detail=f"El programa de estudio '{programa.nombre}' ya existe en el catálogo institucional")
+    existente = None
+    if upsert:
+        existente = next((p for p in all_existentes if p.codigo and p.codigo.strip().upper() == codigo_norm), None)
+        if existente is None:
+            existente = next((p for p in all_existentes if normalize_str(p.nombre) == nombre_norm), None)
+    else:
+        for p in all_existentes:
+            if p.codigo and p.codigo.strip().upper() == codigo_norm:
+                raise HTTPException(status_code=400, detail=f"Ya existe un programa de estudio con el código '{programa.codigo}'")
+            if normalize_str(p.nombre) == nombre_norm:
+                raise HTTPException(status_code=400, detail=f"El programa de estudio '{programa.nombre}' ya existe en el catálogo institucional")
 
     data_create = programa.model_dump()
-    if data_create.get("origen") is None:
-        data_create.pop("origen", None)
+    origen = data_create.pop("origen", None)
+
+    if existente is not None:
+        for field, value in data_create.items():
+            setattr(existente, field, value)
+        if existente.origen == "seed":
+            existente.origen = "manual"
+        elif origen is not None:
+            existente.origen = origen
+        await db.commit()
+        await db.refresh(existente)
+        return existente
+
+    if origen is not None:
+        data_create["origen"] = origen
     db_programa = ProgramaEstudio(**data_create)
     db.add(db_programa)
     await db.flush() # Para obtener ID antes de crear el outbox

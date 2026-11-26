@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import OutboxEvent, engine, get_db
 from models import ConceptoTupa, ConfiguracionCaja, Estudiante, PagoCaja
+from usuario_estudiante import asegurar_usuario_estudiante
 
 router = APIRouter(prefix="/tesoreria")
 
@@ -725,6 +726,8 @@ async def registrar_pago(data: PagoIn, request: Request, db: AsyncSession = Depe
     }, request)
     await db.commit()
     await db.refresh(pago)
+    if concepto.libera_matricula:
+        await asegurar_usuario_estudiante(db, est)
     return {"pago": pago_dict(pago, secreto, await url_publica_qr(db)), "pagoMatricula": bool(est.pago_matricula)}
 
 

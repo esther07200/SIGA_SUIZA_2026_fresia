@@ -499,24 +499,8 @@ export function AcademicDashboard() {
         plan_estudio_id: planId
       };
       
-      const programas = await apiClient.callModule('mod-programas-estudio', 'programas', 'GET');
-      const listaProgramas = Array.isArray(programas) ? programas : [];
-      const existingProgram =
-        listaProgramas.find(
-          programa => String(programa.codigo || '').trim().toUpperCase() === codigoCarrera.toUpperCase()
-        ) ||
-        listaProgramas.find(
-          programa => normalizarTexto(programa.nombre) === normalizarTexto(nombreCarrera)
-        );
-      const createdProgram = existingProgram
-        ? await apiClient.callModule('mod-programas-estudio', `programas/${existingProgram.id}`, 'PUT', {
-            ...programaData,
-            origen: existingProgram.origen === 'seed' ? 'manual' : existingProgram.origen
-          })
-        : await apiClient.callModule('mod-programas-estudio', 'programas', 'POST', programaData);
-      const estructuraActual = existingProgram
-        ? await apiClient.callModule('mod-programas-estudio', `programas/${createdProgram.id}/estructura-completa`, 'GET')
-        : { modulos: [] };
+      const createdProgram = await apiClient.callModule('mod-programas-estudio', 'programas?upsert=1', 'POST', programaData);
+      const estructuraActual = await apiClient.callModule('mod-programas-estudio', `programas/${createdProgram.id}/estructura-completa`, 'GET');
 
       // 3. Registrar módulos y unidades didácticas en mod-programas-estudio
       if (createdProgram && createdProgram.id && Array.isArray(previewData.modulos)) {

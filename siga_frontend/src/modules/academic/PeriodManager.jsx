@@ -163,7 +163,7 @@ export function PeriodManager({ onClose, onUpdate }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Modal Header */}
         <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100">
           <div>
@@ -181,7 +181,7 @@ export function PeriodManager({ onClose, onUpdate }) {
         
         <div className="flex flex-col md:flex-row flex-grow overflow-hidden">
           {/* Formulario Lateral */}
-          <div className="w-full md:w-5/12 p-6 bg-slate-50/60 border-r border-slate-100 overflow-y-auto">
+          <div className="w-full md:w-4/12 p-6 bg-slate-50/60 border-r border-slate-100 overflow-y-auto">
             <div className="flex items-center gap-1.5 mb-4">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Crear Periodo</span>
             </div>
@@ -291,7 +291,7 @@ export function PeriodManager({ onClose, onUpdate }) {
           </div>
           
           {/* Lista Central */}
-          <div className="w-full md:w-7/12 p-6 overflow-y-auto">
+          <div className="w-full md:w-8/12 p-6 overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Historial de Periodos</span>
               <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
@@ -416,38 +416,40 @@ export function PeriodManager({ onClose, onUpdate }) {
                 ) : (
                   <div 
                     key={period.id} 
-                    className="p-3.5 rounded-xl border border-slate-200/80 hover:border-slate-300 hover:shadow-sm transition-all bg-white"
+                    className="p-4 rounded-xl border border-slate-200/80 hover:border-slate-300 hover:shadow-sm transition-all bg-white"
                   >
-                    <div className="flex justify-between items-start gap-2">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-800 font-bold text-sm flex items-center justify-center border border-slate-200/60 font-mono">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-100 text-slate-800 font-bold text-sm flex items-center justify-center border border-slate-200/60 font-mono">
                           {period.codigo.split('-')[1] || period.codigo}
                         </div>
-                        <div>
-                          <h4 className="font-bold text-sm text-slate-900 tracking-tight">{period.nombre || period.codigo}</h4>
-                          <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
-                            <Clock size={12} className="text-slate-400 flex-shrink-0" />
-                            <span>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="truncate font-bold text-sm text-slate-900 tracking-tight" title={period.nombre || period.codigo}>
+                            {period.nombre || period.codigo}
+                          </h4>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-slate-400">
+                            <Clock size={12} className="text-slate-400 shrink-0" />
+                            <span className="whitespace-nowrap">
                               {period.fecha_inicio ? new Date(period.fecha_inicio).toLocaleDateString() : '-'}
                             </span>
                             <span>→</span>
-                            <span>
+                            <span className="whitespace-nowrap">
                               {period.fecha_fin ? new Date(period.fecha_fin).toLocaleDateString() : '-'}
                             </span>
                             {period.nombre && (
-                              <span className="font-mono text-slate-400">({period.codigo})</span>
+                              <span className="font-mono text-slate-400 whitespace-nowrap">({period.codigo})</span>
                             )}
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex flex-col items-end gap-2">
-                        {getStatusBadge(period.estado)}
+                      <div className="flex shrink-0 flex-col items-start gap-2 lg:items-end">
+                        <div className="shrink-0">{getStatusBadge(period.estado)}</div>
                         
-                        <div className="flex items-center gap-1.5">
-                          <label className="text-[10px] text-slate-400">Estado:</label>
+                        <div className="flex w-full flex-wrap items-center justify-start gap-1.5 lg:w-auto lg:justify-end">
+                          <label className="hidden text-[10px] text-slate-400 sm:inline">Estado:</label>
                           <select 
-                            className="text-[11px] font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-2 py-0.5 cursor-pointer outline-none transition-colors"
+                            className="max-w-[160px] text-[11px] font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 cursor-pointer outline-none transition-colors"
                             value={period.estado}
                             onChange={(e) => handleStatusChange(period.id, e.target.value)}
                           >
@@ -461,7 +463,7 @@ export function PeriodManager({ onClose, onUpdate }) {
                             onClick={() => startEdit(period)}
                             title={`Editar periodo ${period.codigo}`}
                             aria-label={`Editar periodo ${period.codigo}`}
-                            className="text-slate-400 hover:text-primary hover:bg-primary/5 border border-slate-200 hover:border-primary/30 rounded-lg p-1 cursor-pointer transition-colors"
+                            className="shrink-0 text-slate-400 hover:text-primary hover:bg-primary/5 border border-slate-200 hover:border-primary/30 rounded-lg p-1.5 cursor-pointer transition-colors"
                           >
                             <Pencil size={13} />
                           </button>
@@ -470,7 +472,7 @@ export function PeriodManager({ onClose, onUpdate }) {
                             onClick={() => handleDelete(period)}
                             title={`Eliminar periodo ${period.codigo}`}
                             aria-label={`Eliminar periodo ${period.codigo}`}
-                            className="text-slate-400 hover:text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 rounded-lg p-1 cursor-pointer transition-colors"
+                            className="shrink-0 text-slate-400 hover:text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 rounded-lg p-1.5 cursor-pointer transition-colors"
                           >
                             <Trash2 size={13} />
                           </button>

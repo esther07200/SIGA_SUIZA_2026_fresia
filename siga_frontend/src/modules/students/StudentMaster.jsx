@@ -530,9 +530,12 @@ export function StudentMaster() {
   const toastError = toast.error;
   const confirm = useConfirm();
   const userRoles = user?.roles ? user.roles.map(r => typeof r === 'string' ? r : r.nombre || r.name) : [];
+  const isProgramScoped = !user?.is_superuser && userRoles.some(role =>
+    ['secretaria_programa', 'docente', 'coordinador_programa'].includes(String(role).toLowerCase())
+  );
   const primaryRole = user?.is_superuser ? 'superadmin' : (userRoles.length > 0 ? userRoles[0] : (user?.role || 'invitado'));
   const userRole = primaryRole;
-  const canViewProgramFilter = ['superadmin', 'admin', 'secretaria_academica', 'admin_admision'].includes(userRole);
+  const canViewProgramFilter = !isProgramScoped && ['superadmin', 'admin', 'secretaria_academica', 'admin_admision'].includes(userRole);
   const canLoadProgramCatalog = userRole !== 'invitado';
   const [students, setStudents] = useState([]);
   const [programCatalog, setProgramCatalog] = useState(
@@ -660,12 +663,21 @@ export function StudentMaster() {
   const handleSearch = async (val = '') => {
     setSearchTerm(val);
     setCurrentPage(1);
+    if (isProgramScoped && !user?.programa_id) {
+      setStudents([]);
+      setLoadError('Su usuario no tiene un programa de estudio asignado. Solicite la asignación al administrador.');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setLoadError(null);
     try {
       const params = [];
-      if (currentPrograma && currentPrograma !== 'ALL') {
-        params.push(`programa_id=${encodeURIComponent(currentPrograma)}`);
+      const programaParam = isProgramScoped
+        ? String(user.programa_id)
+        : (currentPrograma && currentPrograma !== 'ALL' ? String(currentPrograma) : '');
+      if (programaParam) {
+        params.push(`programa_id=${encodeURIComponent(programaParam)}`);
       }
       const url = `${API_BASE}/api/mod-gestion-academica/estudiantes/${params.length ? `?${params.join('&')}` : ''}`;
 
@@ -735,21 +747,20 @@ export function StudentMaster() {
   useEffect(() => {
     if (userRole === 'invitado') return;
 
-    const isProgramScoped = !user?.is_superuser && userRoles.some(role =>
-      ['secretaria_programa', 'docente', 'coordinador_programa'].includes(String(role).toLowerCase())
-    );
-
-    if (isProgramScoped && user?.programa_id) {
+    if (isProgramScoped) {
+      if (!user?.programa_id) {
+        handleSearch(searchTerm);
+        return;
+      }
       const pid = String(user.programa_id);
       if (currentPrograma !== pid) {
-        // Forzar al programa del usuario — esto volverá a disparar el efecto con el ID correcto
         setCurrentPrograma(pid);
         return;
       }
     }
 
     handleSearch(searchTerm);
-  }, [currentPrograma, userRole, user?.programa_id, programCatalog]);
+  }, [currentPrograma, userRole, user?.programa_id, user?.is_superuser, isProgramScoped, programCatalog]);
   const handleFotoChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;

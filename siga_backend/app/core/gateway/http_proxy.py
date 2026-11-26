@@ -36,6 +36,10 @@ class HTTPGateway:
         "content-length", "server",
     }
 
+    @staticmethod
+    def _es_lectura_estudiantes(module_name: str, path: str) -> bool:
+        return module_name == "mod-gestion-academica" and "/estudiantes" in f"/{path.lstrip('/')}"
+
     def __init__(self):
         self.timeout = settings.http_proxy_timeout
         self._client: Optional[httpx.AsyncClient] = None
@@ -96,7 +100,12 @@ class HTTPGateway:
                 circuit_breaker_manager.get_breaker(module_name).on_failure()
             
             # 4. CACHEAR RESPUESTAS EXITOSAS PARA FALLBACK FUTURO
-            if self.resilience_enabled and response.status_code == 200 and request.method == "GET":
+            if (
+                self.resilience_enabled
+                and response.status_code == 200
+                and request.method == "GET"
+                and not self._es_lectura_estudiantes(module_name, path)
+            ):
                 await self._cache_successful_response(module_name, path, response)
             
             # 5. Retornar respuesta al cliente (frontend)
@@ -154,7 +163,9 @@ class HTTPGateway:
         """Verifica y aplica fallback de resiliencia si es necesario"""
         if not self.resilience_enabled or not health_monitor:
             return None
-        
+        if self._es_lectura_estudiantes(module_name, path):
+            return None
+
         # Verificar salud del módulo
         health = health_monitor.get_module_health(module_name)
         
@@ -225,7 +236,9 @@ class HTTPGateway:
         """Ejecuta fallback después de un error en tiempo real"""
         if not self.resilience_enabled or not fallback_manager:
             return None
-            
+        if self._es_lectura_estudiantes(module_name, path):
+            return None
+
         logger.info(f"🔄 Ejecutando fallback para {module_name} después de {error_type}")
         
         # Preparar datos de request para fallback

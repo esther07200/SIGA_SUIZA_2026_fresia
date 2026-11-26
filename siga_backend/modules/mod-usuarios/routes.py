@@ -13,6 +13,68 @@ from models import Usuario, Rol, Permiso, PerfilPersonal
 def _hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
+
+def _validar_programa_requerido(cargo: Optional[str], programa_id: Optional[int]) -> None:
+    if cargo in {"SECRETARIA_PROGRAMA", "COORDINADOR_PROGRAMA"} and not programa_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Debe asignar un programa de estudio al personal con cargo Secretaría o Coordinador de Programa."
+        )
+
+
+async def _roles_por_ids(db: AsyncSession, role_ids: List[int]) -> List[Rol]:
+    if not role_ids:
+        return []
+    result = await db.execute(select(Rol).where(Rol.id.in_(role_ids)))
+    return result.scalars().all()
+
+
+def _es_coordinador(roles: List[Rol]) -> bool:
+    return any(role.name == "coordinador_programa" for role in roles)
+
+
+async def _asignar_programa_coordinador(
+    db: AsyncSession,
+    user_id: int,
+    programa_id: Optional[int],
+    permitir_actual: bool = False,
+) -> None:
+    perfil = (await db.execute(
+        select(PerfilPersonal).where(PerfilPersonal.user_id == user_id)
+    )).scalar_one_or_none()
+    if not programa_id:
+        if permitir_actual and perfil and perfil.programa_estudio_id:
+            return
+        raise HTTPException(
+            status_code=400,
+            detail="Debe asignar un programa de estudio al usuario con rol coordinador_programa."
+        )
+    if perfil:
+        perfil.programa_estudio_id = programa_id
+        return
+    db.add(PerfilPersonal(
+        user_id=user_id,
+        condicion_laboral="NOMBRADO_ESTADO",
+        cargo_funcional="COORDINADOR_PROGRAMA",
+        programa_estudio_id=programa_id,
+    ))
+
+
+async def _adjuntar_programa(db: AsyncSession, usuarios) -> List[Usuario]:
+    usuarios = list(usuarios)
+    if not usuarios:
+        return usuarios
+    result = await db.execute(
+        select(PerfilPersonal.user_id, PerfilPersonal.programa_estudio_id).where(
+            PerfilPersonal.user_id.in_([u.id for u in usuarios])
+        )
+    )
+    programas = {user_id: programa_id for user_id, programa_id in result.all()}
+    for usuario in usuarios:
+        setattr(usuario, "programa_estudio_id", programas.get(usuario.id))
+    return usuarios
+
+
 router = APIRouter()
 
 # Schemas Pydantic
@@ -37,6 +99,7 @@ class UsuarioBase(BaseModel):
 class UsuarioCreate(UsuarioBase):
     password: str
     role_ids: List[int] = []
+    programa_estudio_id: Optional[int] = None
 
 class UsuarioUpdate(BaseModel):
     email: Optional[EmailStr] = None
@@ -44,11 +107,13 @@ class UsuarioUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None
     role_ids: Optional[List[int]] = None
+    programa_estudio_id: Optional[int] = None
 
 class UsuarioResponse(UsuarioBase):
     id: int
     created_at: datetime
     roles: List[RolResponse] = []
+    programa_estudio_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -134,18 +199,18 @@ async def crear_usuario(usuario: UsuarioCreate, request: Request, db: AsyncSessi
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="El email ya está registrado")
 
-    user_data = usuario.model_dump(exclude={"password", "role_ids"})
+    user_data = usuario.model_dump(exclude={"password", "role_ids", "programa_estudio_id"})
     hashed_password = _hash_password(usuario.password)
     
     db_user = Usuario(**user_data, hashed_password=hashed_password)
     
-    # Asignar roles
-    if usuario.role_ids:
-        roles_result = await db.execute(select(Rol).where(Rol.id.in_(usuario.role_ids)))
-        db_user.roles = roles_result.scalars().all()
+    roles_asignados = await _roles_por_ids(db, usuario.role_ids)
+    db_user.roles = roles_asignados
 
     db.add(db_user)
     await db.flush()
+    if _es_coordinador(roles_asignados):
+        await _asignar_programa_coordinador(db, db_user.id, usuario.programa_estudio_id)
 
     request_id = request.headers.get("X-Request-ID", "unknown")
     event = OutboxEvent(
@@ -164,14 +229,14 @@ async def crear_usuario(usuario: UsuarioCreate, request: Request, db: AsyncSessi
     result = await db.execute(
         select(Usuario).options(selectinload(Usuario.roles)).where(Usuario.id == db_user.id)
     )
-    return result.scalar_one()
+    return (await _adjuntar_programa(db, [result.scalar_one()]))[0]
 
 @router.get("/usuarios", response_model=List[UsuarioResponse])
 async def obtener_usuarios(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(Usuario).options(selectinload(Usuario.roles)).order_by(Usuario.created_at.desc())
     )
-    return result.scalars().all()
+    return await _adjuntar_programa(db, result.scalars().all())
 
 @router.get("/usuarios/{usuario_id}", response_model=UsuarioResponse)
 async def obtener_usuario(usuario_id: int, db: AsyncSession = Depends(get_db)):
@@ -181,7 +246,7 @@ async def obtener_usuario(usuario_id: int, db: AsyncSession = Depends(get_db)):
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return user
+    return (await _adjuntar_programa(db, [user]))[0]
 
 @router.put("/usuarios/{usuario_id}", response_model=UsuarioResponse)
 async def actualizar_usuario(usuario_id: int, usuario: UsuarioUpdate, request: Request, db: AsyncSession = Depends(get_db)):
@@ -193,6 +258,8 @@ async def actualizar_usuario(usuario_id: int, usuario: UsuarioUpdate, request: R
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
     update_data = usuario.model_dump(exclude_unset=True)
+    programa_id = update_data.pop("programa_estudio_id", None)
+    ya_era_coordinador = _es_coordinador(list(db_user.roles))
     
     if "email" in update_data and update_data["email"] != db_user.email:
         email_check = await db.execute(select(Usuario).where(Usuario.email == update_data["email"]))
@@ -200,14 +267,20 @@ async def actualizar_usuario(usuario_id: int, usuario: UsuarioUpdate, request: R
             raise HTTPException(status_code=400, detail="El email ya está en uso por otro usuario")
 
     # Actualizar roles
+    roles_asignados = list(db_user.roles)
     if "role_ids" in update_data:
         role_ids = update_data.pop("role_ids")
-        roles_result = await db.execute(select(Rol).where(Rol.id.in_(role_ids)))
-        db_user.roles = roles_result.scalars().all()
+        roles_asignados = await _roles_por_ids(db, role_ids)
+        db_user.roles = roles_asignados
 
     # Actualizar campos
     for key, value in update_data.items():
         setattr(db_user, key, value)
+
+    if _es_coordinador(roles_asignados):
+        await _asignar_programa_coordinador(
+            db, db_user.id, programa_id, permitir_actual=ya_era_coordinador
+        )
 
     request_id = request.headers.get("X-Request-ID", "unknown")
     event = OutboxEvent(
@@ -217,7 +290,7 @@ async def actualizar_usuario(usuario_id: int, usuario: UsuarioUpdate, request: R
     db.add(event)
     await db.commit()
     await db.refresh(db_user)
-    return db_user
+    return (await _adjuntar_programa(db, [db_user]))[0]
 
 @router.delete("/usuarios/{usuario_id}")
 async def eliminar_usuario(usuario_id: int, request: Request, db: AsyncSession = Depends(get_db)):
@@ -242,6 +315,8 @@ async def eliminar_usuario(usuario_id: int, request: Request, db: AsyncSession =
 # --- CRUD Personal Institucional ---
 @router.post("/personal", response_model=PersonalResponse, status_code=status.HTTP_201_CREATED)
 async def registrar_personal(personal: PersonalCreate, request: Request, db: AsyncSession = Depends(get_db)):
+    _validar_programa_requerido(personal.cargo_funcional, personal.programa_estudio_id)
+
     # Validar email
     result = await db.execute(select(Usuario).where(Usuario.email == personal.email))
     if result.scalar_one_or_none():
@@ -261,6 +336,8 @@ async def registrar_personal(personal: PersonalCreate, request: Request, db: Asy
     rol_names = ["docente"]
     if personal.cargo_funcional == "SECRETARIA_PROGRAMA":
         rol_names = ["secretaria_programa"]
+    elif personal.cargo_funcional == "COORDINADOR_PROGRAMA":
+        rol_names = ["coordinador_programa"]
     elif personal.cargo_funcional == "JEFE_AREA":
         rol_names = ["docente", "coordinador_programa"]
         
@@ -320,6 +397,10 @@ async def actualizar_personal(perfil_id: int, personal: PersonalUpdate, request:
 
     db_user = db_perfil.usuario
     update_data = personal.model_dump(exclude_unset=True)
+    _validar_programa_requerido(
+        update_data.get("cargo_funcional", db_perfil.cargo_funcional),
+        update_data.get("programa_estudio_id", db_perfil.programa_estudio_id),
+    )
 
     # Actualizar campos de Usuario
     if "email" in update_data and update_data["email"] != db_user.email:
@@ -339,6 +420,8 @@ async def actualizar_personal(perfil_id: int, personal: PersonalUpdate, request:
         rol_names = ["docente"]
         if update_data["cargo_funcional"] == "SECRETARIA_PROGRAMA":
             rol_names = ["secretaria_programa"]
+        elif update_data["cargo_funcional"] == "COORDINADOR_PROGRAMA":
+            rol_names = ["coordinador_programa"]
         elif update_data["cargo_funcional"] == "JEFE_AREA":
             rol_names = ["docente", "coordinador_programa"]
             
