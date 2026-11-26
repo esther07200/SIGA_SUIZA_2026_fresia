@@ -10,16 +10,17 @@ import {
 } from 'lucide-react';
 
 const PROGRAMAS = {
-  1: 'Desarrollo de Sistemas de Información',
-  2: 'Enfermería Técnica',
-  4: 'Gestión / Asistencia Administrativa',
-  5: 'Contabilidad',
-  6: 'Mecatrónica Automotriz',
-  7: 'Electricidad Industrial',
-  8: 'Administración de Operaciones Turísticas',
-  9: 'Construcción Civil',
-  10: 'Producción Agropecuaria',
-  11: 'Manejo Forestal',
+  1: 'Enfermería Técnica',
+  2: 'Contabilidad',
+  3: 'Mecatrónica Automotriz',
+  4: 'Gestión Administrativa',
+  5: 'Producción Agropecuaria',
+  6: 'Construcción Civil',
+  7: 'Desarrollo de Sistemas de Información',
+  8: 'Electricidad Industrial',
+  9: 'Administración de Operaciones Turísticas',
+  10: 'Manejo Forestal',
+  11: 'Asistencia Administrativa',
 };
 
 function SearchSelect({

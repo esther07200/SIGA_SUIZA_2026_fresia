@@ -982,9 +982,11 @@ async def sincronizar_estudiantes_seccion(unidad_id: int, periodo_id: int, reque
         )
         db_mat = res_mat.scalar_one_or_none()
         if not db_mat:
+            if not prog_id and not est.programa_id:
+                continue
             db_mat = Matricula(
                 estudiante_id=est.id,
-                programa_id=prog_id or est.programa_id or 1,
+                programa_id=prog_id or est.programa_id,
                 periodo_id=periodo_id,
                 estado_matricula="confirmada",
                 ciclo=ciclo,

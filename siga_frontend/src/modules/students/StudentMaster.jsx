@@ -413,16 +413,17 @@ const createEmptyStudentForm = (programaId = '') => ({
 
 const PROGRAMAS = [
   { id: 'ALL', label: 'Todos los Programas' },
-  { id: '1', label: 'Desarrollo de Sistemas de Información' },
-  { id: '2', label: 'Enfermería Técnica' },
-  { id: '4', label: 'Gestión / Asistencia Administrativa' },
-  { id: '5', label: 'Contabilidad' },
-  { id: '6', label: 'Mecatrónica Automotriz' },
-  { id: '7', label: 'Electricidad Industrial' },
-  { id: '8', label: 'Administración de Operaciones Turísticas' },
-  { id: '9', label: 'Construcción Civil' },
-  { id: '10', label: 'Producción Agropecuaria' },
-  { id: '11', label: 'Manejo Forestal' },
+  { id: '1', label: 'Enfermería Técnica' },
+  { id: '2', label: 'Contabilidad' },
+  { id: '3', label: 'Mecatrónica Automotriz' },
+  { id: '4', label: 'Gestión Administrativa' },
+  { id: '5', label: 'Producción Agropecuaria' },
+  { id: '6', label: 'Construcción Civil' },
+  { id: '7', label: 'Desarrollo de Sistemas de Información' },
+  { id: '8', label: 'Electricidad Industrial' },
+  { id: '9', label: 'Administración de Operaciones Turísticas' },
+  { id: '10', label: 'Manejo Forestal' },
+  { id: '11', label: 'Asistencia Administrativa' },
 ];
 
 const TIPOS_SANGRE = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'];
