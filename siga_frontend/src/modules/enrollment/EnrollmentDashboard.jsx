@@ -30,7 +30,6 @@ export function EnrollmentDashboard() {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [programCatalog, setProgramCatalog] = useState([]);
-  const [filterPago, setFilterPago] = useState('todos');
   const [loadError, setLoadError] = useState(null);
 
   // Para secretaria_programa y docente, el programa se bloquea al del usuario.
@@ -88,11 +87,6 @@ export function EnrollmentDashboard() {
       const data = await response.json();
       
       let finalData = Array.isArray(data) ? data : [];
-      if (filterPago === 'pagados') {
-        finalData = finalData.filter(s => Boolean(s.pago_matricula));
-      } else if (filterPago === 'pendientes') {
-        finalData = finalData.filter(s => !s.pago_matricula);
-      }
       if (searchVal.length >= 3) {
         finalData = finalData.filter(s => 
           (s.dni && s.dni.includes(searchVal)) || 
@@ -129,7 +123,7 @@ export function EnrollmentDashboard() {
     fetchStudents();
     // Solo debe re-ejecutarse al cambiar de programa o rol.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPrograma, filterPago, userRole, user?.programa_id, user?.is_superuser, isProgramScoped]);
+  }, [currentPrograma, userRole, user?.programa_id, user?.is_superuser, isProgramScoped]);
 
   const handleEnrollClick = (student) => {
     setSelectedStudent(student);
@@ -293,19 +287,6 @@ export function EnrollmentDashboard() {
             {programCatalog.find(p => String(p.id) === String(user.programa_id))?.nombre || `Programa ${user.programa_id}`}
           </span>
         )}
-        <select
-          className="input-field py-2.5 text-sm bg-slate-50 border-none font-semibold text-slate-700 shrink-0"
-          value={filterPago}
-          onChange={(e) => {
-            setFilterPago(e.target.value);
-            fetchStudents(searchTerm);
-          }}
-          aria-label="Filtrar por pago de matrícula"
-        >
-          <option value="todos">Todos (incluye pagados)</option>
-          <option value="pagados">Matrícula pagada</option>
-          <option value="pendientes">Pendiente de pago</option>
-        </select>
         <span className="px-4 text-slate-400 text-xl shrink-0">🔍</span>
         <input 
           type="text" 
