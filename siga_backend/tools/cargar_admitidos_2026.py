@@ -85,12 +85,21 @@ def login(client):
 
 
 def sembrar_programas(client, headers):
-    existentes = {p["codigo"]: p["id"] for p in client.get("/api/mod-programas-estudio/programas", headers=headers).json()}
+    import unicodedata
+
+    def normalizar(s):
+        s = unicodedata.normalize("NFD", str(s or "").strip().lower())
+        return "".join(c for c in s if unicodedata.category(c) != "Mn")
+
+    existentes = client.get("/api/mod-programas-estudio/programas", headers=headers).json()
+    por_codigo = {str(p.get("codigo") or "").strip().upper(): p["id"] for p in existentes}
+    por_nombre = {normalizar(p.get("nombre")): p["id"] for p in existentes}
     mapa = {}
     for nombre, codigo, creditos, descripcion in PROGRAMAS:
-        if codigo in existentes:
-            mapa[nombre] = existentes[codigo]
-            print(f"  = {nombre} (id {existentes[codigo]}) ya existia")
+        existente_id = por_codigo.get(codigo.upper()) or por_nombre.get(normalizar(nombre))
+        if existente_id:
+            mapa[nombre] = existente_id
+            print(f"  = {nombre} (id {existente_id}) ya existia")
             continue
         payload = {
             "nombre": nombre,

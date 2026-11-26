@@ -500,11 +500,19 @@ export function AcademicDashboard() {
       };
       
       const programas = await apiClient.callModule('mod-programas-estudio', 'programas', 'GET');
-      const existingProgram = (Array.isArray(programas) ? programas : []).find(
-        programa => String(programa.codigo || '').trim().toUpperCase() === codigoCarrera.toUpperCase()
-      );
+      const listaProgramas = Array.isArray(programas) ? programas : [];
+      const existingProgram =
+        listaProgramas.find(
+          programa => String(programa.codigo || '').trim().toUpperCase() === codigoCarrera.toUpperCase()
+        ) ||
+        listaProgramas.find(
+          programa => normalizarTexto(programa.nombre) === normalizarTexto(nombreCarrera)
+        );
       const createdProgram = existingProgram
-        ? await apiClient.callModule('mod-programas-estudio', `programas/${existingProgram.id}`, 'PUT', programaData)
+        ? await apiClient.callModule('mod-programas-estudio', `programas/${existingProgram.id}`, 'PUT', {
+            ...programaData,
+            origen: existingProgram.origen === 'seed' ? 'manual' : existingProgram.origen
+          })
         : await apiClient.callModule('mod-programas-estudio', 'programas', 'POST', programaData);
       const estructuraActual = existingProgram
         ? await apiClient.callModule('mod-programas-estudio', `programas/${createdProgram.id}/estructura-completa`, 'GET')

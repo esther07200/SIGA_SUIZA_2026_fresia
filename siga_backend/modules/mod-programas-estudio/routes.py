@@ -27,7 +27,7 @@ class ProgramaBase(BaseModel):
     estado: str = "activo"
 
 class ProgramaCreate(ProgramaBase):
-    pass
+    origen: Optional[str] = None
 
 class ProgramaResponse(ProgramaBase):
     id: int
@@ -95,7 +95,10 @@ async def crear_programa(programa: ProgramaCreate, request: Request, db: AsyncSe
         if normalize_str(p.nombre) == nombre_norm:
             raise HTTPException(status_code=400, detail=f"El programa de estudio '{programa.nombre}' ya existe en el catálogo institucional")
 
-    db_programa = ProgramaEstudio(**programa.model_dump())
+    data_create = programa.model_dump()
+    if data_create.get("origen") is None:
+        data_create.pop("origen", None)
+    db_programa = ProgramaEstudio(**data_create)
     db.add(db_programa)
     await db.flush() # Para obtener ID antes de crear el outbox
 
@@ -357,8 +360,12 @@ async def actualizar_programa(programa_id: int, programa_data: ProgramaCreate, d
     if not programa:
         raise HTTPException(status_code=404, detail="Programa no encontrado")
 
-    for field, value in programa_data.model_dump().items():
+    data_update = programa_data.model_dump()
+    origen = data_update.pop("origen", None)
+    for field, value in data_update.items():
         setattr(programa, field, value)
+    if origen is not None:
+        programa.origen = origen
 
     await db.commit()
     await db.refresh(programa)
